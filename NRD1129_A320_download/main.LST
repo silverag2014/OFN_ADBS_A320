@@ -1,0 +1,75 @@
+C51 COMPILER V7.10   MAIN                                                                  06/02/1987 18:18:26 PAGE 1   
+
+
+C51 COMPILER V7.10, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\c51.exe main.c DB OE LARGE OT(7,SPEED)
+
+line level    source
+
+   1          //-----------------------------------------------------------------------------
+   2          // F3xx_USB_Main.c
+   3          //-----------------------------------------------------------------------------
+   4          // Copyright 2005 Silicon Laboratories, Inc.
+   5          // http://www.silabs.com
+   6          //
+   7          // Program Description:
+   8          //
+   9          // This application will communicate with a PC across the USB interface.
+  10          // The device will appear to be a mouse, and will manipulate the cursor
+  11          // on screen.
+  12          //
+  13          // How To Test:    See Readme.txt
+  14          //
+  15          //
+  16          // FID:            3XX000035
+  17          // Target:         C8051F32x/C8051F340
+  18          // Tool chain:     Keil C51 7.50 / Keil EVAL C51
+  19          //                 Silicon Laboratories IDE version 2.6
+  20          // Command Line:   See Readme.txt
+  21          // Project Name:   F3xx_MouseExample
+  22          //
+  23          //
+  24          // Release 1.0
+  25          //
+  26          // Initial revision.
+  27          //
+  28          
+  29          //-----------------------------------------------------------------------------
+  30          // Includes
+  31          //-----------------------------------------------------------------------------
+  32          
+  33          #include "c8051f3xx.h"
+  34          #include "F3xx_USB0_InterruptServiceRoutine.h"
+  35          #include "F3xx_USB0_Mouse.h"
+  36          #include "timer.h"
+  37          
+  38          extern void usbTaskLoop(void);
+  39          //-----------------------------------------------------------------------------
+  40          // Main Routine
+  41          //-----------------------------------------------------------------------------
+  42          void main(void)
+  43          {
+  44   1         System_Init ();
+  45   1      
+  46   1         EA = 1;
+  47   1      
+  48   1         usbTaskLoop();
+  49   1      }
+  50          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =      9    ----
+   CONSTANT SIZE    =   ----    ----
+C51 COMPILER V7.10   MAIN                                                                  06/02/1987 18:18:26 PAGE 2   
+
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

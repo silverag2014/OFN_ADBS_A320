@@ -1,0 +1,401 @@
+C51 COMPILER V7.10   I2C                                                                   06/02/1987 18:18:26 PAGE 1   
+
+
+C51 COMPILER V7.10, COMPILATION OF MODULE I2C
+OBJECT MODULE PLACED IN i2c.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\c51.exe i2c.c DB OE LARGE OT(7,SPEED)
+
+line level    source
+
+   1          //-----------------------------------------------------------------------------
+   2          // F34x_SMBus_EEPROM.c
+   3          //-----------------------------------------------------------------------------
+   4          // Copyright 2006 Silicon Laboratories, Inc.
+   5          // http://www.silabs.com
+   6          //
+   7          // Program Description:
+   8          //
+   9          // This example demonstrates how the C8051F34x SMBus interface can communicate
+  10          // with a 256 byte I2C Serial EEPROM (Microchip 24LC02B).
+  11          // - Interrupt-driven SMBus implementation
+  12          // - Only master states defined (no slave or arbitration)
+  13          // - Timer1 used as SMBus clock source
+  14          // - Timer2 used by SMBus for SCL low timeout detection
+  15          // - SCL frequency defined by <SMB_FREQUENCY> constant
+  16          // - Pinout:
+  17          //    P0.0 -> SDA (SMBus)
+  18          //    P0.1 -> SCL (SMBus)
+  19          //
+  20          //    P2.2 -> LED
+  21          //
+  22          //    all other port pins unused
+  23          //
+  24          // How To Test:
+  25          //
+  26          // 1) Download code to a 'F34x device that is connected to a 24LC02B serial
+  27          //    EEPROM (see the EEPROM datasheet for the pinout information).
+  28          // 2) Run the code:
+  29          //         a) the test will indicate proper communication with the EEPROM by
+  30          //            turning on the LED at the end the end of the test
+  31          //         b) the test can also be verified by running to the if statements
+  32          //            in main and checking the sent and received values by adding
+  33          //            the variables to the Watch Window
+  34          //
+  35          // FID:            34X000078
+  36          // Target:         C8051F34x
+  37          // Tool chain:     Keil C51 7.50 / Keil EVAL C51
+  38          // Command Line:   None
+  39          //
+  40          // Release 1.0
+  41          //    -Initial Revision (TP)
+  42          //    -30 MAR 2006
+  43          //
+  44          
+  45          //-----------------------------------------------------------------------------
+  46          // Includes and Device-Specific Parameters
+  47          //-----------------------------------------------------------------------------
+  48          
+  49          #include <C8051F3xx.h>
+  50          #include <i2c.h>
+  51          #include <intrins.h>
+  52          
+  53          
+  54          //-----------------------------------------------------------------------------
+  55          // Global VARIABLES
+C51 COMPILER V7.10   I2C                                                                   06/02/1987 18:18:26 PAGE 2   
+
+  56          //-----------------------------------------------------------------------------
+  57          unsigned char i2c_status;
+  58          unsigned char i2c_buffer[I2C_BUFF_SIZE];                        // Holds the return value
+  59          
+  60          unsigned char* p_i2c_data_in;   // Global pointer for SMBus data. All receive data is written here
+  61          
+  62          unsigned char i2c_single_byte_out;      // Global holder for single byte writes.
+  63          
+  64          unsigned char* p_i2c_data_out;  // Global pointer for SMBus data. All transmit data is read from here
+  65          
+  66          unsigned char i2c_data_len;     // Global holder for number of bytes to send or receive in the current SMBus 
+             -transfer.
+  67          
+  68          unsigned char i2c_word_addr;            // Global holder for the EEPROM word address that will be accessed in the n
+             -ext transfer
+  69          
+  70          unsigned char i2c_target;               // Target SMBus slave address
+  71          
+  72          bit i2c_busy;           // Software flag to indicate when the EEPROM_ByteRead() or EEPROM_ByteWrite() functions ha
+             -ve claimed the SMBus
+  73          
+  74          bit i2c_rw;             // Software flag to indicate the direction of the current transfer
+  75          
+  76          bit i2c_send_word_addr;         // When set, this flag causes the ISR to send the 8-bit <word_addr> after sending
+             - the slave address.
+  77          
+  78          bit i2c_random_read;    // When set, this flag causes the ISR to send a START signal after sending the word
+             - address.
+  79                                          // For the 24LC02B EEPROM, a random read (a read from a particular address in memory) st
+             -arts as a write then
+  80                                          // changes to a read after the repeated start is sent. 
+  81                                                          // The ISR handles this switchover if the <i2c_random_read> bit is set.
+  82          
+  83          bit i2c_ack_poll;               // When set, this flag causes the ISR to send a repeated START until the slave has ack
+             -nowledged its address
+  84          
+  85          
+  86          //-----------------------------------------------------------------------------
+  87          // Function PROTOTYPES
+  88          //-----------------------------------------------------------------------------
+  89          
+  90          void i2c_Init(void);
+  91          void i2c_ISR(void);
+  92          
+  93          void i2c_ByteWrite(unsigned char device_addr, unsigned char data_addr, unsigned char *dat, unsigned char n
+             -um_byte);
+  94          void i2c_ByteRead(unsigned char device_addr, unsigned char data_addr, unsigned char *dat, unsigned char nu
+             -m_byte);
+  95          
+  96          //-----------------------------------------------------------------------------
+  97          // Initialization Routines
+  98          //-----------------------------------------------------------------------------
+  99          
+ 100          //-----------------------------------------------------------------------------
+ 101          // i2c_Init()
+ 102          //-----------------------------------------------------------------------------
+ 103          //
+ 104          // Return Value : None
+ 105          // Parameters   : None
+ 106          //
+ 107          // The SMBus peripheral is configured as follows:
+ 108          // - SMBus enabled
+C51 COMPILER V7.10   I2C                                                                   06/02/1987 18:18:26 PAGE 3   
+
+ 109          // - Slave mode disabled
+ 110          // - Timer1 used as clock source. The maximum SCL frequency will be
+ 111          //   approximately 1/3 the Timer1 overflow rate
+ 112          // - Setup and hold time extensions enabled
+ 113          // - Free and SCL low timeout detection enabled
+ 114          //
+ 115          void i2c_Init(void)
+ 116          {  
+ 117   1              CKCON     |= 0x10;              // Timer2 clock source = SYSCLK
+ 118   1              TMR2CN    = 0x08;       // Timer2 in 8-bit auto-reload mode
+ 119   1                                                              // Timer2 enabled
+ 120   1              TMR2RLL   = 0xEC;               // 100kHz                 
+ 121   1      
+ 122   1              SMB0CF    = 0x83;       // Enable SMBus; Use Timer2 High byte overflows as SMBus clock source; 
+ 123   1              EIE1      |= 0x01;
+ 124   1              i2c_status = I2C_FREE;
+ 125   1              i2c_busy = 0;
+ 126   1      }
+ 127          
+ 128          
+ 129          
+ 130          //-----------------------------------------------------------------------------
+ 131          // SMBus Interrupt Service Routine (ISR)
+ 132          //-----------------------------------------------------------------------------
+ 133          //
+ 134          // SMBus ISR state machine
+ 135          // - Master only implementation - no slave or arbitration states defined
+ 136          // - All incoming data is written starting at the global pointer <p_i2c_data_in>
+ 137          // - All outgoing data is read from the global pointer <p_i2c_data_out>
+ 138          //
+ 139          void i2c_ISR (void) interrupt 7
+ 140          {
+ 141   1              bit FAIL = 0;                           // Used by the ISR to flag failed transfers
+ 142   1              static char i;                  // Used by the ISR to count the number of data bytes sent or received
+ 143   1              static bit SEND_START = 0;      // Send a start
+ 144   1      
+ 145   1              switch (SMB0CN & 0xF0)                  // Status vector
+ 146   1              {
+ 147   2                      case I2C_MTSTA:    //0xE0       // Master Transmitter/Receiver: START condition transmitted.
+ 148   2                              SMB0DAT = i2c_target;           // Load address of the target slave
+ 149   2                              SMB0DAT &= 0xFE;        // Clear the LSB of the address for the
+ 150   2                              // R/W bit
+ 151   2                              SMB0DAT |= i2c_rw;      // Load R/W bit
+ 152   2                              STA = 0;                // Manually clear START bit
+ 153   2                              i = 0;                  // Reset data byte counter
+ 154   2                              break;
+ 155   2      
+ 156   2                      case I2C_MTDB:     //0xC0       // Master Transmitter: Data byte (or Slave Address) transmitted
+ 157   2                              if (ACK)                // Slave Address or Data Byte Acknowledged?
+ 158   2                              {                              
+ 159   3                                      if (SEND_START)
+ 160   3                                      {
+ 161   4                                              STA = 1;
+ 162   4                                              SEND_START = 0;
+ 163   4                                              break;
+ 164   4                                      }
+ 165   3                                      if(i2c_send_word_addr)          // Are we sending the word address?
+ 166   3                                      {
+ 167   4                                              i2c_send_word_addr = 0;   // Clear flag
+ 168   4                                              SMB0DAT = i2c_word_addr;    // Send word address
+ 169   4      
+ 170   4                                              if (i2c_random_read)
+C51 COMPILER V7.10   I2C                                                                   06/02/1987 18:18:26 PAGE 4   
+
+ 171   4                                              {
+ 172   5                                                      SEND_START = 1;         // Send a START after the next ACK cycle
+ 173   5                                                      i2c_rw = I2C_READ;
+ 174   5                                              }
+ 175   4      
+ 176   4                                              break;
+ 177   4                                      }
+ 178   3      
+ 179   3                                      if (i2c_rw == I2C_WRITE)        // Is this transfer a WRITE?
+ 180   3                                      {
+ 181   4      
+ 182   4                                              if (i < i2c_data_len)   // Is there data to send?
+ 183   4                                              {
+ 184   5                                                      SMB0DAT = *p_i2c_data_out;      //*p_i2c_data_out;      // send data byte                                               
+ 185   5                                                      p_i2c_data_out++;                       // increment data out pointer
+ 186   5                                                      i++;                                            // increment number of bytes sent
+ 187   5                                              }
+ 188   4                                              else
+ 189   4                                              {
+ 190   5                                                      STO = 1;                // Set STO to terminte transfer
+ 191   5                                                      i2c_busy = 0;           // Clear software busy flag
+ 192   5                                                      i2c_status = I2C_FREE;
+ 193   5                                              }
+ 194   4                                      }
+ 195   3                                      else 
+ 196   3                                      {}              // If this transfer is a READ, then take no action. Slave address was transmitted.
+ 197   3                                                      // A separate 'case' is defined for data byte received.
+ 198   3                              }
+ 199   2                              else            // If slave NACK,
+ 200   2                              {
+ 201   3                                      if(i2c_ack_poll)
+ 202   3                                      {
+ 203   4                                              STA = 1;                // Restart transfer
+ 204   4                                      }
+ 205   3                                      else
+ 206   3                                      {
+ 207   4                                              FAIL = 1;       // Indicate failed transfer and handle at end of ISR
+ 208   4                                      }                           
+ 209   3                              }
+ 210   2                              break;
+ 211   2      
+ 212   2                      case I2C_MRDB:     //0x80       // Master Receiver: byte received
+ 213   2                              if ( i < i2c_data_len ) // Is there any data remaining?
+ 214   2                              {
+ 215   3                                      *p_i2c_data_in = SMB0DAT;       // Store received byte
+ 216   3                                      p_i2c_data_in++;                // Increment data in pointer
+ 217   3                                      i++; 
+ 218   3                                      ACK = 1;                        // Set ACK bit (may be cleared later in the code)
+ 219   3      
+ 220   3                              }
+ 221   2      
+ 222   2                              if (i == i2c_data_len)                  // This is the last byte
+ 223   2                              {
+ 224   3                                      i2c_busy = 0;                   // Free SMBus interface
+ 225   3                                      ACK = 0;                        //  NACK to indicate last byte of this transfer
+ 226   3                                      STO = 1;                        // Send STOP to terminate transfer
+ 227   3                                      i2c_status = I2C_FREE;
+ 228   3                                      _nop_();
+ 229   3                              }
+ 230   2      
+ 231   2                              break;
+ 232   2      
+C51 COMPILER V7.10   I2C                                                                   06/02/1987 18:18:26 PAGE 5   
+
+ 233   2                      default:
+ 234   2                              FAIL = 1;                       // Indicate failed transfer and handle at end of ISR
+ 235   2                              break;
+ 236   2              }
+ 237   1      
+ 238   1              if (FAIL)                               // If the transfer failed,
+ 239   1              {
+ 240   2                      SMB0CF &= ~0x80;                        // Reset communication
+ 241   2                      SMB0CF |= 0x80;
+ 242   2                      STA = 0;
+ 243   2                      STO = 0;
+ 244   2                      ACK = 0;
+ 245   2      
+ 246   2                      i2c_busy = 0;                           // Free SMBus
+ 247   2                      i2c_status = I2C_FREE;  
+ 248   2                      FAIL = 0;
+ 249   2              }
+ 250   1      
+ 251   1              SI = 0;                                 // Clear interrupt flag
+ 252   1      }
+ 253          
+ 254          
+ 255          //-----------------------------------------------------------------------------
+ 256          // Support Functions
+ 257          //-----------------------------------------------------------------------------
+ 258          
+ 259          //-----------------------------------------------------------------------------
+ 260          // i2c_ByteWrite ()
+ 261          //-----------------------------------------------------------------------------
+ 262          //
+ 263          // Return Value : None
+ 264          // Parameters   :
+ 265          //   1) unsigned char addr - address to write in the EEPROM
+ 266          //                        range is full range of character: 0 to 255
+ 267          //
+ 268          //   2) unsigned char dat - data to write to the address <addr> in the EEPROM
+ 269          //                        range is full range of character: 0 to 255
+ 270          //
+ 271          // This function writes the value in <dat> to location <addr> in the EEPROM
+ 272          // then polls the EEPROM until the write is complete.
+ 273          //
+ 274          void i2c_ByteWrite(unsigned char device_addr, unsigned char data_addr, unsigned char *dat, unsigned char n
+             -um_byte)
+ 275          {
+ 276   1              i2c_status = I2C_WRITE_EEPROM;
+ 277   1      
+ 278   1              // Set SMBus ISR parameters
+ 279   1              i2c_target = device_addr;       // Set target slave address
+ 280   1              i2c_rw = I2C_WRITE;     // Mark next transfer as a write
+ 281   1              i2c_send_word_addr = 1;         // Send Word Address after Slave Address
+ 282   1              i2c_random_read = 0;     // Do not send a START signal after the word address
+ 283   1              i2c_ack_poll = 1;       // Enable Acknowledge Polling (The ISR will automatically restart the
+ 284   1                                                              // transfer if the slave does not acknowledge its address.)
+ 285   1      
+ 286   1              // Specify the Outgoing Data
+ 287   1              if(num_byte == 1)
+ 288   1              {
+ 289   2                      i2c_word_addr = data_addr & 0x7F;       // Set the target address in the EEPROM's internal memory space
+ 290   2              }
+ 291   1              else if(num_byte > 1)
+ 292   1              {
+ 293   2                      i2c_word_addr = (data_addr & 0x7F) | I2C_AUTO;  // Set the target address in the EEPROM's internal memor
+C51 COMPILER V7.10   I2C                                                                   06/02/1987 18:18:26 PAGE 6   
+
+             -y space
+ 294   2              }
+ 295   1              
+ 296   1              p_i2c_data_out = dat;   // Store <dat> (local variable) in a global variable so the ISR can read
+ 297   1                                                                      // it after this function exits
+ 298   1      
+ 299   1              i2c_data_len = num_byte;                // Specify to ISR that the next transfer will contain one data byte
+ 300   1      
+ 301   1              STA = 1;                                // Initiate SMBus Transfer
+ 302   1      
+ 303   1      }
+ 304          
+ 305          
+ 306          //-----------------------------------------------------------------------------
+ 307          // i2c_ByteRead ()
+ 308          //-----------------------------------------------------------------------------
+ 309          //
+ 310          // Return Value :
+ 311          //   1) unsigned char data - data read from address <addr> in the EEPROM
+ 312          //                        range is full range of character: 0 to 255
+ 313          //
+ 314          // Parameters   :
+ 315          //   1) unsigned char addr - address to read data from the EEPROM
+ 316          //                        range is full range of character: 0 to 255
+ 317          //
+ 318          // This function returns a single byte from location <addr> in the EEPROM then
+ 319          // polls the <i2c_busy> flag until the read is complete.
+ 320          //
+ 321          void i2c_ByteRead(unsigned char device_addr, unsigned char data_addr, unsigned char *dat, unsigned char nu
+             -m_byte)
+ 322          {
+ 323   1              i2c_status = I2C_READ_EEPROM;
+ 324   1      
+ 325   1              // Set SMBus ISR parameters
+ 326   1              i2c_target = device_addr;       // Set target slave address
+ 327   1              i2c_rw = I2C_WRITE;     // A random read starts as a write then changes to a read after
+ 328   1                                                              // the repeated start is sent. The ISR handles this switchover if
+ 329   1                                                              // the <i2c_random_read> bit is set.
+ 330   1              i2c_send_word_addr = 1;         // Send Word Address after Slave Address
+ 331   1              i2c_random_read = 1;    // Send a START after the word address
+ 332   1              i2c_ack_poll = 1;       // Enable Acknowledge Polling
+ 333   1      
+ 334   1              // Specify the Incoming Data
+ 335   1              if(num_byte == 1)
+ 336   1              {
+ 337   2                      i2c_word_addr = data_addr & 0x7F;       // Set the target address in the EEPROM's internal memory space
+ 338   2              }
+ 339   1              else if(num_byte > 1)
+ 340   1              {
+ 341   2                      i2c_word_addr = (data_addr & 0x7F) | I2C_AUTO;  // Set the target address in the EEPROM's internal memor
+             -y space
+ 342   2              }
+ 343   1      
+ 344   1              p_i2c_data_in = dat;
+ 345   1              i2c_data_len = num_byte;                // Specify to ISR that the next transfer will contain one data byte
+ 346   1      
+ 347   1              STA = 1;                                // Initiate SMBus Transfer
+ 348   1      }
+ 349          
+ 350          
+ 351          //-----------------------------------------------------------------------------
+ 352          // End Of File
+C51 COMPILER V7.10   I2C                                                                   06/02/1987 18:18:26 PAGE 7   
+
+ 353          //-----------------------------------------------------------------------------
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    507    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     22      12
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      6       1
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

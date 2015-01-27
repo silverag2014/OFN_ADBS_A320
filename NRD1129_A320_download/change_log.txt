@@ -1,0 +1,23 @@
+v1.0
+- (1) Modified from NRD1098_1099 source code (v2_5)
+- (2) Modify Power Up sequence
+
+v1.1
+- (1) Upgrade Power Up sequence
+
+v1.5.2_A_ES2
+- (1) Feature: Mouse, Single Step Rocker, Multiple Step Rocker/Inertia Rocker, Scroll, Joystick, 8 Way Rocker
+- (2) LED to indicate the finger detection.
+
+
+****************************************************************
+Version (CVS Tag)	: V2.8.4_A
+
+Date 			: 22 MAY 2009
+Author			: LC Gan
+
+- (1) Modified from A320_v2.8.3_A (customer's code). 
+- (2) Fixed TWI.
+- (3) Optimize TWI sequence (SPI/TWI motion reading sequence merge into one sequence - Motion_SPInTWi).
+
+****************************************************************

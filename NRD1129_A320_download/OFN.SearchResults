@@ -1,0 +1,2 @@
+---- INTERRUPT_UART1 Matches (1 in 1 files) ----
+c8051F340.h:#define INTERRUPT_UART1            16  // Serial Port 1

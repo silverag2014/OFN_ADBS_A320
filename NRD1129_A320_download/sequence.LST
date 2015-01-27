@@ -1,0 +1,2840 @@
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 1   
+
+
+C51 COMPILER V7.10, COMPILATION OF MODULE SEQUENCE
+OBJECT MODULE PLACED IN sequence.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\c51.exe sequence.c DB OE LARGE OT(7,SPEED)
+
+line level    source
+
+   1          //;***************************************************************************
+   2          //;
+   3          //;        Copyright 2007 Avago Technologies Limited
+   4          //;    This code is provided by Avago Technologies as a reference.
+   5          //;     Avago Technologies makes no claims or warranties
+   6          //;    to this firmware's suitabilityor any application.
+   7          //;    All rights reserved. Patent Pending. 
+   8          //;
+   9          //;*************************************************************************** 
+  10          
+  11          //------------------------------------------------------------------------------------
+  12          // Includes
+  13          //------------------------------------------------------------------------------------
+  14          #include <c8051f3xx.h>  // SFR declarations
+  15          #include <stdio.h>
+  16          #include <stdlib.h>
+  17          #include <string.h>
+  18          #include <intrins.h>
+  19          #include <timer.h>
+  20          #include <SPI_TRANSFER.h>
+  21          #include <F3xx_USB0_Mouse.h>
+  22          #include <F3xx_USB0_ReportHandler.h>
+  23          #include <F3xx_USB0_InterruptServiceRoutine.h>
+  24          #include <i2c.h>
+  25          #include <rocker.h>
+  26          
+  27          
+  28          
+  29          
+  30          
+  31                  ////////////////////////////////////////////////////////////////////////////
+  32                  // User Code Here: Add business logic 
+  33                  ////////////////////////////////////////////////////////////////////////////
+  34                  ////////////////////////////////////////////////////////////////////////////
+  35                  // End User Code 
+  36                  ////////////////////////////////////////////////////////////////////////////
+  37          
+  38          //------------------------------------------------------------------------------------
+  39          // CONSTANT
+  40          //------------------------------------------------------------------------------------
+  41          
+  42          //#define JOYSTICK
+  43          
+  44          #define DEBOUNCE_TIME           5
+  45          
+  46          #define MOUSE_MODE                      1
+  47          #define MOUSE_DATA_LENGTH       5
+  48          #define IMAGE_MODE                      2
+  49          #define IMAGE_DATA_LENGTH       5
+  50          #define KEY_MODE                        3
+  51          #define KEY_DATA_LENGTH         9
+  52          
+  53          /// Modified by TLLAU BEGIN ///
+  54          #define JOYSTICK_USB_MODE               4
+  55          #define JOYSTICK_DATA_LENGTH    9                               
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 2   
+
+  56          /// Modified by TLLAU END ///
+  57          
+  58          
+  59          #define SENSOR_TIME     8
+  60          
+  61          #define UP                              0
+  62          #define DOWN                    1
+  63          #define RIGHT                   2
+  64          #define LEFT                    3
+  65          
+  66          //#define SCROLL_MODE           10
+  67          #define ROCKER_M_MODE   12
+  68          #define ROCKER_K_MODE   13      
+  69          
+  70          #define FINGER_MODE                     0
+  71          #define SCROLL_MODE                     3       // 5. Modified by TLLAU                 
+  72          #define ROCKER_K_MODE_S         6
+  73          #define ROCKER_K_MODE_L         2       // 3. Modified by TLLAU
+  74          #define ROCKER_K_MODE_S_C       1
+  75          #define ROCKER_K_MODE_L_C       7       // 2. Modified by TLLAU
+  76          #define ROCKER_K_MODE_L_8       5       // Modified by TLLAU
+  77          
+  78          /// Modified by TLLAU BEGIN ///
+  79          #define JOYSTICK_MODE           4
+  80          
+  81          #define MODE_NUM                        5       
+  82          
+  83          #define JOYSTICK_DELAY          100
+  84          #define JOYSTICK_CENTER         127
+  85          
+  86          #define UP_R_KEY                0x01
+  87          #define UP_L_KEY                0x02
+  88          #define DOWN_R_KEY              0x03
+  89          #define DOWN_L_KEY              0x04
+  90          /// Modified by TLLAU END ///
+  91          
+  92          #define TAP_TIME                1000
+  93          #define STEP_DELAY              100
+  94          #define SHUTTER_DELAY   0x0003
+  95          #define MOUSE_STEP              20
+  96          
+  97          #define TWENTY_MA               20
+  98          #define TEN_MA                  10
+  99          
+ 100          //------------------------------------------------------------------------------------
+ 101          // Global VARIABLES
+ 102          //------------------------------------------------------------------------------------
+ 103          typedef union
+ 104          {
+ 105                  unsigned int w;
+ 106                  unsigned char b[2];
+ 107          }
+ 108          union16;
+ 109          
+ 110          unsigned char data seq0_state, seq1_state, seq3_state, seq4_state;
+ 111          unsigned char data seq5_state, seq6_state, seq11_state;
+ 112          unsigned char data seq13_state;
+ 113          
+ 114          unsigned char data seq7_state;
+ 115          
+ 116          //FPD fix
+ 117          int temp_a;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 3   
+
+ 118          unsigned char finger_leave_counter1,finger_leave_counter2,finger_on_counter;
+ 119          unsigned char motion0, motion1, motion2;
+ 120          
+ 121          bit L7; // Modified by TLLAU
+ 122          
+ 123          // communication with PC
+ 124          union16 para1, para2;
+ 125          unsigned int image_index;
+ 126          xdata unsigned char buffer[20];
+ 127          xdata unsigned char image_buffer[PIXEL_NUMBER + 2];
+ 128          signed char count_x_temp, count_y_temp;
+ 129          unsigned int index;
+ 130          bit start_flag;
+ 131          
+ 132          // mouse packet
+ 133          unsigned int num_tap, num_tap_count;
+ 134          signed char count_x, count_y, count_z;
+ 135          signed  char mod_x, mod_y, mod_z;
+ 136          unsigned char sent_buttons;
+ 137          
+ 138          // button
+ 139          unsigned char buttons;
+ 140          //bdata unsigned char buttons;
+ 141          //sbit left_button      = buttons^0;
+ 142          //sbit right_button     = buttons^1;
+ 143          //sbit middle_button    = buttons^2;
+ 144          
+ 145          
+ 146          // motion burst
+ 147          signed char delta_y_hist[100];
+ 148          unsigned char hist_counter;
+ 149          unsigned char motion;
+ 150          int delta_x, delta_y;
+ 151          unsigned char data squal, shutter_h, shutter_l;
+ 152          //unsigned char data pix_min, pix_max;
+ 153          
+ 154          // LED
+ 155          unsigned char led_flag, duty_cycle;
+ 156          union16 pca_timer, pca_counter;
+ 157          
+ 158          // mode 
+ 159          unsigned char usb_mode, ofn_mode, scroll_mode, free_scroll, communication_mode;
+ 160          unsigned char led_temp;
+ 161          
+ 162          // speed switching
+ 163          unsigned int data shutter_flag, shutter_flag_temp;
+ 164          unsigned int count_x_temp1, count_x_temp2, count_x_temp3;
+ 165          signed int average_shutter_w_motion;
+ 166          signed char count_x0, count_x1, count_x2, count_x3, count_x4;   
+ 167          signed char count_y0, count_y1, count_y2, count_y3, count_y4;
+ 168          union16 shutter0, shutter1, shutter6;
+ 169          
+ 170          // flag / temp
+ 171          unsigned char temp;
+ 172          unsigned char x_temp, y_temp, z_temp;
+ 173          bit shut_flag, chk_usb;
+ 174          extern unsigned char spi_temp;
+ 175          extern unsigned char click_flag;
+ 176          extern bit rc_flag, sc_flag;
+ 177          unsigned char pix_min, pix_max, pix_avg;
+ 178          unsigned char FPD_state;
+ 179          unsigned char history_motion,history_motion_counter;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 4   
+
+ 180          
+ 181          // shutter calibration
+ 182          extern unsigned int shutter_basic, shutter_d;
+ 183          extern unsigned int SHUTTER_UPPER_TRES, SHUTTER_LOWER_TRES;
+ 184          //extern unsigned char data PIX_MIN_CALIB;
+ 185          extern bit threshold_flag;
+ 186          
+ 187          
+ 188          // toggle step
+ 189          unsigned char keyboard_dir, keyboard_dir_temp;
+ 190          unsigned char keyboard_tap, keyboard_tap1;
+ 191          unsigned char click_flag_temp, keyboard_tap_temp;
+ 192          unsigned char keyboard_temp;
+ 193          bit tap_flag;
+ 194          extern unsigned int shutter_motion1, shutter_motion2;
+ 195          signed char sign_count_x0, sign_count_x1, sign_count_x2, sign_count_x3, sign_count_x4;  
+ 196          signed char sign_count_y0, sign_count_y1, sign_count_y2, sign_count_y3, sign_count_y4;
+ 197          signed int X_Total_Displacement_main, Y_Total_Displacement_main; 
+ 198          
+ 199          
+ 200          // state
+ 201          extern unsigned char left_state, right_state, click_state, calibrate_state;
+ 202          
+ 203          // rocker
+ 204          signed char x_raw, y_raw;
+ 205          unsigned char k_raw;
+ 206          int rocker_delta_x, rocker_delta_y, continuous_delta_x, continuous_delta_y, rocker_delta_x_T, rocker_delta
+             -_y_T;
+ 207          unsigned char send_rocker_data, start_stepping, start_continuous_stepping, issued_times = 0;
+ 208          
+ 209          
+ 210          //LED ratio FPD
+ 211          //unsigned char last_state, written, perform_check_FPD,shutter_values_captured;
+ 212          //int current_shutter, previous_shutter, shutter_ratio;
+ 213          //unsigned char FPD_turned_off, led_switching_start;
+ 214          
+ 215          
+ 216          //------------------------------------------------------------------------------------
+ 217          // VARIABLES
+ 218          //------------------------------------------------------------------------------------
+ 219          extern data unsigned char IN_PACKET[10];
+ 220          data unsigned char OUT_PACKET[5];
+ 221          data unsigned char grab_image;
+ 222          data unsigned char received;
+ 223          unsigned char motion_buffer[10];
+ 224          
+ 225          
+ 226          int multiple_step_rocker_flag;
+ 227          
+ 228          //------------------------------------------------------------------------------------
+ 229          // NOKIA PARAMETERS
+ 230          //------------------------------------------------------------------------------------
+ 231          //ACCELERATION
+ 232          int n1, n2, n3, n4;
+ 233          int t1, t2, t3, t4, t5; 
+ 234          
+ 235          n1 = 2; 
+ 236          n2 = 10; 
+ 237          n3 = 26; 
+ 238          n4 = 58;
+ 239          t1 = 500; 
+ 240          t2 = 250; 
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 5   
+
+ 241          t3 = 125; 
+ 242          t4 = 62; 
+ 243          t5 = 31; 
+ 244          
+ 245          //START| Speed 1 | Speed 2      | Speed 3      | Speed 4      | Speed 5
+ 246          //START| n1 x t1 | (n2-n1) x t2 | (n3-n2) x t3 | (n4-n3) x t4 | Polling rate based on t5
+ 247          //
+ 248          //Default Setting:
+ 249          //START| Speed 1 | Speed 2      | Speed 3      | Speed 4      | Speed 5
+ 250          //START| 2 x 500 | (10-8) x 250 | (26-10)x 125 | (58-26) x 62 | Polling rate of 31ms  
+ 251          //         | 1000    | 2000             | 2000         |  1984        | beyond 'Speed 4'
+ 252          //
+ 253          //n=repetition
+ 254          //t=polling rate(ms)
+ 255           
+ 256          
+ 257          //TRACKING ON/OFF - Disable/Enable Navigation ( 1 = ON, 0 = OFF)
+ 258          int TrackSW = 1;
+ 259          
+ 260          //COUNTS PER SWIPE
+ 261          extern int step_multiplier_mode1 = 1;   //affects the sensitivity in mouse mode (use integers between 1-5)
+ 262          //extern int step_multiplier_mode2 = 1;
+ 263          //extern int step_multiplier_mode3 = 1;
+ 264          extern int step_multiplier_mode4 = 1;
+ 265          extern int step_multiplier_mode5 = 1;
+ 266          
+ 267          
+ 268          
+ 269          
+ 270          //------------------------------------------------------------------------------------
+ 271          // Function PROTOTYPES
+ 272          //------------------------------------------------------------------------------------
+ 273          void Image_Dump(void);
+ 274          void Left_Switch(void);
+ 275          void Right_Switch(void);
+ 276          void Mode_Select_Switch(void);
+ 277          void Motion_SPInTWI (void);
+ 278          void USB_Send_Data(void);
+ 279          void Motion_TWI(void);
+ 280          
+ 281          void Dome_Switch(void);
+ 282          void LED_driving_current_switch (void);
+ 283          
+ 284          unsigned char toggle_step(int X_Total_Displacement, int Y_Total_Displacement);
+ 285          unsigned char toggle_step2(int deltaX, int deltaY);
+ 286          int X_Acceleration_Buffer, Y_Acceleration_Buffer;
+ 287          void data_process(void);
+ 288          unsigned char key_step, key_step2, finger_status; // change
+ 289          
+ 290          /// Modified by TLLAU BEGIN ///
+ 291          #include <math.h>
+ 292          
+ 293          #define PI                                      3.141592f
+ 294          #define SHUTTER_THERS_UP        1200
+ 295          #define SHUTTER_THERS_LO        500
+ 296          #define KEYPRESS_DELAY          100
+ 297          
+ 298          unsigned char joystick_dir(signed char deltaX, signed char deltaY);
+ 299          unsigned char keyboard_tap_repeat;
+ 300          extern bit toggle_flag;
+ 301          extern signed int X_Total_Displacement, Y_Total_Displacement;                           
+ 302          /// Modified by TLLAU END ///
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 6   
+
+ 303          
+ 304          //------------------------------------------------------------------------------------
+ 305          // External Function PROTOTYPES
+ 306          //------------------------------------------------------------------------------------
+ 307          extern void SendPacket(void);
+ 308                  ////////////////////////////////////////////////////////////////////////////
+ 309                  // User Code Here: Add business logic 
+ 310                  ////////////////////////////////////////////////////////////////////////////
+ 311          
+ 312                  ////////////////////////////////////////////////////////////////////////////
+ 313                  // End User Code 
+ 314                  ////////////////////////////////////////////////////////////////////////////
+ 315          
+ 316          
+ 317          //------------------------------------------------------------------------------------
+ 318          // InitSeq
+ 319          //------------------------------------------------------------------------------------
+ 320          
+ 321          //Initializes and sets the default values of all variables
+ 322          void Sequence_Init(void)
+ 323          {
+ 324   1              communication_mode = SPI_MODE;//SPI_MODE;
+ 325   1      
+ 326   1              Timer0Init();
+ 327   1      
+ 328   1              EA = 1;
+ 329   1              t0_data = 100;
+ 330   1              time_0 = 1;
+ 331   1              while(time_0 == 1);
+ 332   1              EA = 0; 
+ 333   1      
+ 334   1              EA = 1;
+ 335   1      
+ 336   1              if(communication_mode == I2C_MODE)
+ 337   1              {
+ 338   2              //      L6 = 1;
+ 339   2                      Initiliaze_A320_I2C();
+ 340   2              }
+ 341   1              else if(communication_mode == SPI_MODE)
+ 342   1              {
+ 343   2              //      L6 = 0;
+ 344   2                      Initiliaze_A320();
+ 345   2              }
+ 346   1      
+ 347   1              USB0_Init();
+ 348   1              
+ 349   1              left_state = 0;
+ 350   1              right_state = 0;
+ 351   1              click_state = 0;
+ 352   1              calibrate_state = 0;
+ 353   1      
+ 354   1              seq0_state = 0;
+ 355   1              seq1_state = 0;
+ 356   1              seq3_state = 0;
+ 357   1              seq4_state = 0;
+ 358   1              seq5_state = 0;
+ 359   1              seq6_state = 0;
+ 360   1              seq7_state = 0;
+ 361   1              seq11_state = 0;
+ 362   1              seq13_state = 0;
+ 363   1      
+ 364   1              threshold_flag = 0;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 7   
+
+ 365   1              index = 0;
+ 366   1      
+ 367   1              buffer_clear();
+ 368   1      
+ 369   1              scroll_mode = 0;
+ 370   1              free_scroll = 0;
+ 371   1              count_z = 0;
+ 372   1              shutter_flag = 0;
+ 373   1              buttons = 0x00;
+ 374   1              click_flag = 0;
+ 375   1              rc_flag = 0;
+ 376   1              sc_flag = 0;
+ 377   1              SHUTTER_UPPER_TRES = 0;
+ 378   1              SHUTTER_LOWER_TRES = 0;
+ 379   1      
+ 380   1              count_x = 0;
+ 381   1              count_y = 0;
+ 382   1              count_x3 = 0;
+ 383   1              count_y3 = 0;
+ 384   1              count_x4 = 0;
+ 385   1              count_y4 = 0;
+ 386   1              count_x_temp = 0;
+ 387   1              start_flag = 0;
+ 388   1              count_x_temp1 = 0;
+ 389   1              count_x_temp2 = 0;
+ 390   1              count_x_temp3 = 0;
+ 391   1      
+ 392   1              ofn_mode = FINGER_MODE;
+ 393   1              usb_mode = 1;
+ 394   1              shutter_flag_temp = SHUTTER_DELAY;
+ 395   1      
+ 396   1              x_raw = 0;
+ 397   1              y_raw = 0;
+ 398   1              k_raw = 0;
+ 399   1      
+ 400   1      //      L1 = 0; // Modified by TLLAU
+ 401   1      
+ 402   1              L2 = 0; //cwl
+ 403   1              L3 = 1;
+ 404   1              L4 = 1;
+ 405   1              L5 = 1;
+ 406   1              
+ 407   1              L6 = 1; // 0; Modified by TLLAU
+ 408   1              L7 = 1;
+ 409   1              LED7 = 1; // Modified by TLLAU
+ 410   1      
+ 411   1              if(communication_mode == I2C_MODE)
+ 412   1              {
+ 413   2                      led_temp = ~P1;
+ 414   2                      P1 &= ~0xFC;
+ 415   2                      P1 |= (led_temp & 0xFC);
+ 416   2              }
+ 417   1      
+ 418   1              history_motion_counter = 0;
+ 419   1      
+ 420   1              threshold_flag = 1;
+ 421   1              num_tap = 0;
+ 422   1              num_tap_count = 0;
+ 423   1              hist_counter = 0;
+ 424   1      
+ 425   1              average_shutter_w_motion = 80;
+ 426   1      
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 8   
+
+ 427   1              rocker_delta_x=0;
+ 428   1              rocker_delta_y=0;
+ 429   1              start_continuous_stepping = 0;
+ 430   1      
+ 431   1      
+ 432   1      }
+ 433          
+ 434          
+ 435          
+ 436          
+ 437          //------------------------------------------------------------------------------------
+ 438          // Main Sequence
+ 439          //------------------------------------------------------------------------------------
+ 440          void usbTaskLoop(void)
+ 441          {               
+ 442   1              Sequence_Init();
+ 443   1              while(1)
+ 444   1              {
+ 445   2                      Image_Dump();                                   // Image Dump
+ 446   2      
+ 447   2                      Left_Switch();                                  // Left Switch
+ 448   2                      Right_Switch();                                 // Right Switch
+ 449   2                      Mode_Select_Switch();                   // Mode Select Switch
+ 450   2                      Dome_Switch();                                  // Dome
+ 451   2                      
+ 452   2                      if(communication_mode == SPI_MODE)
+ 453   2                      {
+ 454   3                              Motion_SPInTWI ();                              // Motion (SPI)
+ 455   3                      }
+ 456   2                      else if(communication_mode == I2C_MODE)
+ 457   2                      {
+ 458   3                              Motion_SPInTWI();                               // Motion (SPI)
+ 459   3                      }
+ 460   2      
+ 461   2                      USB_Send_Data();                                // USB sending data     
+ 462   2                      
+ 463   2      //              L6=!GPIO; Modified by TLLAU             
+ 464   2      //CWL 090109            L1 = !GPIO; // Modified by TLLAU
+ 465   2                      
+ 466   2              }
+ 467   1      }
+ 468          
+ 469          
+ 470          
+ 471          
+ 472          //------------------------------------------------------------------------------------
+ 473          // Image_Dump (Image Dump)
+ 474          //------------------------------------------------------------------------------------
+ 475          
+ 476          void Image_Dump(void)
+ 477          {
+ 478   1              switch(seq1_state)
+ 479   1              {
+ 480   2                      case 0:
+ 481   2                              if(grab_image == 1)
+ 482   2                              {
+ 483   3                                      image_buffer[0] = 2;    // report ID
+ 484   3                                      image_buffer[1] = 0;    // image no ready
+ 485   3                                      image_index = 2;
+ 486   3                                      grab_image = 0;
+ 487   3                                      chk_usb = 1;
+ 488   3                                      seq1_state = 30;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 9   
+
+ 489   3                              }
+ 490   2                              break;
+ 491   2                      
+ 492   2                      case 30:
+ 493   2                              if(communication_mode == SPI_MODE)
+ 494   2                              {
+ 495   3                                      EA = 0;
+ 496   3                                      spi_temp = spi_read_sensor(ADBM_A320_PIXELGRAB_ADDR);
+ 497   3                                      EA = 1;
+ 498   3                                      seq1_state = 40;
+ 499   3                              }
+ 500   2                              else if(communication_mode == I2C_MODE)
+ 501   2                              {
+ 502   3                                      seq1_state = 32;
+ 503   3                              }
+ 504   2                              
+ 505   2                              break;  
+ 506   2                      case 32:
+ 507   2                              if(i2c_status == I2C_FREE)
+ 508   2                              {
+ 509   3                                      i2c_ByteRead(I2C_ADDR, ADBM_A320_PIXELGRAB_ADDR, &i2c_buffer, 1);
+ 510   3                                      seq1_state = 34;
+ 511   3                              }
+ 512   2                              break;  
+ 513   2                      case 34:
+ 514   2                              if(i2c_status == I2C_FREE)
+ 515   2                              {
+ 516   3                                      spi_temp = i2c_buffer[0];
+ 517   3                                      seq1_state = 40;
+ 518   3                              }
+ 519   2                              break;
+ 520   2      
+ 521   2                      case 40:
+ 522   2                              if(communication_mode == SPI_MODE)
+ 523   2                              {
+ 524   3                                      EA = 0;
+ 525   3                                      spi_write_sensor(ADBM_A320_PIXELGRAB_ADDR, 0x00);
+ 526   3                                      EA = 1;
+ 527   3                                      seq1_state = 50;
+ 528   3                              }
+ 529   2                              else if(communication_mode == I2C_MODE)
+ 530   2                              {
+ 531   3                                      seq1_state = 42;
+ 532   3                              }
+ 533   2                              
+ 534   2                              break;  
+ 535   2                      case 42:
+ 536   2                              if(i2c_status == I2C_FREE)
+ 537   2                              {
+ 538   3                                      i2c_ByteWrite(I2C_ADDR, ADBM_A320_PIXELGRAB_ADDR, 0x00, 1);  
+ 539   3                                      seq1_state = 50;
+ 540   3                              }
+ 541   2                              break;
+ 542   2      
+ 543   2                      case 50:
+ 544   2                              if(communication_mode == SPI_MODE)
+ 545   2                              {
+ 546   3                                      EA = 0;
+ 547   3                                      spi_temp = spi_read_sensor(ADBM_A320_MOTION_ADDR);
+ 548   3                                      EA = 1;
+ 549   3                                      if((spi_temp & (ADBM_A320_MOTION_PIXFIRST | ADBM_A320_MOTION_PIXRDY))
+ 550   3                                      == (ADBM_A320_MOTION_PIXFIRST | ADBM_A320_MOTION_PIXRDY))
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 10  
+
+ 551   3                                      {
+ 552   4                                              seq1_state = 70;
+ 553   4                                      }
+ 554   3                              }
+ 555   2                              else if(communication_mode == I2C_MODE)
+ 556   2                              {
+ 557   3                                      seq1_state = 52;
+ 558   3                              }
+ 559   2                              break;
+ 560   2                      case 52:
+ 561   2                              if(i2c_status == I2C_FREE)
+ 562   2                              {
+ 563   3                                      i2c_ByteRead(I2C_ADDR, ADBM_A320_MOTION_ADDR, &i2c_buffer, 1);
+ 564   3                                      seq1_state = 54;
+ 565   3                              }
+ 566   2                              break;  
+ 567   2                      case 54:
+ 568   2                              if(i2c_status == I2C_FREE)
+ 569   2                              {
+ 570   3                                      spi_temp = i2c_buffer[0];
+ 571   3                                      if((spi_temp & (ADBM_A320_MOTION_PIXFIRST | ADBM_A320_MOTION_PIXRDY))
+ 572   3                                      == (ADBM_A320_MOTION_PIXFIRST | ADBM_A320_MOTION_PIXRDY))
+ 573   3                                      {
+ 574   4                                              seq1_state = 70;
+ 575   4                                      }
+ 576   3                                      else
+ 577   3                                      {
+ 578   4                                              seq1_state = 52;
+ 579   4                                      }
+ 580   3                              }
+ 581   2                              break;    
+ 582   2                                 
+ 583   2                      case 60:
+ 584   2                              if(communication_mode == SPI_MODE)
+ 585   2                              {
+ 586   3                                      EA = 0;
+ 587   3                                      spi_temp = spi_read_sensor(ADBM_A320_MOTION_ADDR);
+ 588   3                                      EA = 1;
+ 589   3                                      if((spi_temp & ADBM_A320_MOTION_PIXRDY) == ADBM_A320_MOTION_PIXRDY)
+ 590   3                                      {
+ 591   4                                              seq1_state = 70;
+ 592   4                                      }
+ 593   3                              }
+ 594   2                              else if(communication_mode == I2C_MODE)
+ 595   2                              {
+ 596   3                                      seq1_state = 62;
+ 597   3                              }
+ 598   2                              break;
+ 599   2                      case 62:
+ 600   2                              if(i2c_status == I2C_FREE)
+ 601   2                              {
+ 602   3                                      i2c_ByteRead(I2C_ADDR, ADBM_A320_MOTION_ADDR, &i2c_buffer, 1);
+ 603   3                                      seq1_state = 64;
+ 604   3                              }
+ 605   2                              break;  
+ 606   2                      case 64:
+ 607   2                              if(i2c_status == I2C_FREE)
+ 608   2                              {
+ 609   3                                      spi_temp = i2c_buffer[0];
+ 610   3                                      if((spi_temp & ADBM_A320_MOTION_PIXRDY) == ADBM_A320_MOTION_PIXRDY)
+ 611   3                                      {
+ 612   4                                              seq1_state = 70;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 11  
+
+ 613   4                                      }
+ 614   3                                      else
+ 615   3                                      {
+ 616   4                                              seq1_state = 62;
+ 617   4                                      }
+ 618   3                              }
+ 619   2                              break;   
+ 620   2                                             
+ 621   2                      case 70:
+ 622   2                              if(communication_mode == SPI_MODE)
+ 623   2                              {
+ 624   3                                      EA = 0;
+ 625   3                                      image_buffer[image_index++] = spi_read_sensor(ADBM_A320_PIXELGRAB_ADDR);
+ 626   3                                      EA = 1;
+ 627   3                                      seq1_state = 80;
+ 628   3                              }
+ 629   2                              else if(communication_mode == I2C_MODE)
+ 630   2                              {
+ 631   3                                      seq1_state = 72;
+ 632   3                              }
+ 633   2                              break;
+ 634   2                      case 72:
+ 635   2                              if(i2c_status == I2C_FREE)
+ 636   2                              {
+ 637   3                                      i2c_ByteRead(I2C_ADDR, ADBM_A320_PIXELGRAB_ADDR, &i2c_buffer, 1);
+ 638   3                                      seq1_state = 74;
+ 639   3                              }
+ 640   2                              break;  
+ 641   2                      case 74:
+ 642   2                              if(i2c_status == I2C_FREE)
+ 643   2                              {
+ 644   3                                      image_buffer[image_index++] = i2c_buffer[0];
+ 645   3                                      seq1_state = 80;
+ 646   3                              }
+ 647   2                              break;
+ 648   2                      
+ 649   2                      case 80:
+ 650   2                              if(chk_usb == 1)
+ 651   2                              {
+ 652   3                                      if(image_index >= (PIXEL_NUMBER + 2))
+ 653   3                                      {
+ 654   4                                              image_index = 0;
+ 655   4                                              chk_usb = 0;
+ 656   4                                              image_buffer[1] = 1;            // image ready
+ 657   4                                              seq1_state = 0;
+ 658   4                                      }
+ 659   3                                      else
+ 660   3                                      {
+ 661   4                                              seq1_state = 60;
+ 662   4                                      }
+ 663   3                              }
+ 664   2                              break;             
+ 665   2                      
+ 666   2                      default:
+ 667   2                              break;
+ 668   2              }
+ 669   1      }
+ 670          
+ 671          
+ 672          
+ 673          
+ 674          //------------------------------------------------------------------------------------
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 12  
+
+ 675          // Left_Switch (Left Switch)
+ 676          //------------------------------------------------------------------------------------
+ 677          
+ 678          void Left_Switch(void)
+ 679          {
+ 680   1              switch(seq3_state)
+ 681   1              {
+ 682   2                      case 0:
+ 683   2                              if(LEFT_SW == 0)
+ 684   2                              {
+ 685   3                                      t3_data = DEBOUNCE_TIME;        //5
+ 686   3                                      time_3 = 1;
+ 687   3                                      seq3_state = 10;
+ 688   3                              }
+ 689   2                              break;
+ 690   2                      case 10:
+ 691   2                              if(LEFT_SW == 1)
+ 692   2                              {
+ 693   3                                      seq3_state = 0;
+ 694   3                              }
+ 695   2                              else if(time_3 == 0)
+ 696   2                              {
+ 697   3                                      free_scroll = 0;
+ 698   3                                      buffer_clear();
+ 699   3                                      count_z = 0;
+ 700   3      
+ 701   3                                      #ifdef JOYSTICK
+                                                      if((ofn_mode != JOYSTICK_MODE) || (ofn_mode != ROCKER_K_MODE_S) || (ofn_mode != ROCKER_K_MODE_S_C) ||
+             - ((ofn_mode != ROCKER_K_MODE_L) || (ofn_mode != ROCKER_K_MODE_L_8)) || (ofn_mode != ROCKER_K_MODE_L_C))
+                                              #else
+ 704   3                                              if(ofn_mode != JOYSTICK_MODE)
+ 705   3                                      #endif
+ 706   3                                              {
+ 707   4                                                      keyboard_dir = INSERT;                  //Assigns the keyboard INSERT key to left click 
+ 708   4                                              }
+ 709   3                                              else
+ 710   3                                              {
+ 711   4                                                      buttons |= 0x40;        // Set Joystick Left Button
+ 712   4                                              }
+ 713   3                                              /// Modified by TLLAU END ///
+ 714   3      
+ 715   3                                      seq3_state = 20;                                
+ 716   3                              }
+ 717   2                              break;
+ 718   2                      case 20:
+ 719   2                              if(LEFT_SW == 1)
+ 720   2                              {
+ 721   3                                      t3_data = DEBOUNCE_TIME;
+ 722   3                                      time_3 = 1;
+ 723   3                                      seq3_state = 30;
+ 724   3                              }
+ 725   2                              break;
+ 726   2                      case 30:
+ 727   2                              if(LEFT_SW == 0)
+ 728   2                              {
+ 729   3                                      seq3_state = 20;
+ 730   3                              }
+ 731   2                              else if(time_3 == 0)
+ 732   2                              {
+ 733   3      
+ 734   3                                      #ifdef JOYSTICK
+                                                      if((ofn_mode != JOYSTICK_MODE)||(ofn_mode != ROCKER_K_MODE_S) || (ofn_mode != ROCKER_K_MODE_S_C) || (
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 13  
+
+             -(ofn_mode != ROCKER_K_MODE_L) || (ofn_mode != ROCKER_K_MODE_L_8)) || (ofn_mode != ROCKER_K_MODE_L_C))
+                                              #else
+ 737   3                                              if(ofn_mode != JOYSTICK_MODE)
+ 738   3                                      #endif
+ 739   3                                              {                       
+ 740   4                                                      buttons &= ~LEFT_BUTTON;
+ 741   4                                              }
+ 742   3                                              else
+ 743   3                                              {
+ 744   4                                                      buttons &= ~0x40;       // Clear Joystick Left Button   
+ 745   4                                              }
+ 746   3                                              /// Modified by TLLAU END ///
+ 747   3      
+ 748   3                                      seq3_state = 0;
+ 749   3                              }
+ 750   2                              break;
+ 751   2                      default:
+ 752   2                              break;
+ 753   2              }
+ 754   1      }
+ 755          
+ 756          
+ 757          //------------------------------------------------------------------------------------
+ 758          // Right_Switch (Right Switch)
+ 759          //------------------------------------------------------------------------------------
+ 760          
+ 761          void Right_Switch(void)
+ 762          {
+ 763   1              switch(seq4_state)
+ 764   1              {
+ 765   2                      case 0:
+ 766   2                              if(RIGHT_SW == 0)
+ 767   2                              {
+ 768   3                                      t4_data = DEBOUNCE_TIME;
+ 769   3                                      time_4 = 1;
+ 770   3                                      seq4_state = 10;
+ 771   3                              }
+ 772   2                              break;
+ 773   2                      case 10:
+ 774   2                              if(RIGHT_SW == 1)
+ 775   2                              {
+ 776   3                                      seq4_state = 0;
+ 777   3                              }
+ 778   2                              else if(time_4 == 0)
+ 779   2                              {
+ 780   3                                      free_scroll = 0;
+ 781   3                                      buffer_clear();
+ 782   3                                      count_z = 0;
+ 783   3      
+ 784   3      
+ 785   3      
+ 786   3      
+ 787   3                                      #ifdef JOYSTICK
+                                                      if((ofn_mode == JOYSTICK_MODE) ||(ofn_mode == ROCKER_K_MODE_S) || (ofn_mode == ROCKER_K_MODE_S_C) || 
+             -((ofn_mode == ROCKER_K_MODE_L) || (ofn_mode == ROCKER_K_MODE_L_8)) || (ofn_mode == ROCKER_K_MODE_L_C))
+                                              #else
+ 790   3                                              if(ofn_mode == JOYSTICK_MODE)
+ 791   3                                      #endif
+ 792   3                                              {
+ 793   4                                                      buttons |= 0x80;        // Set Joystick Right Button
+ 794   4                                              }
+ 795   3                                              /// Modified by TLLAU END ///
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 14  
+
+ 796   3                                      t4_data = 2000;
+ 797   3                                      time_4 = 1;
+ 798   3                                      seq4_state = 20;
+ 799   3                              }
+ 800   2                              break;
+ 801   2                      case 20:
+ 802   2                              if(RIGHT_SW == 1)
+ 803   2                              {
+ 804   3      
+ 805   3      
+ 806   3                                      #ifdef JOYSTICK
+                                                      if((ofn_mode != JOYSTICK_MODE) || (ofn_mode != ROCKER_K_MODE_S) || (ofn_mode != ROCKER_K_MODE_S_C) ||
+             - ((ofn_mode != ROCKER_K_MODE_L) || (ofn_mode != ROCKER_K_MODE_L_8)) || (ofn_mode != ROCKER_K_MODE_L_C))
+                                              #else
+ 809   3                                              if(ofn_mode != JOYSTICK_MODE)
+ 810   3                                      #endif
+ 811   3                                              {
+ 812   4                                                      if(ofn_mode == SCROLL_MODE )
+ 813   4                                                      {
+ 814   5                                                              buttons &= ~RIGHT_BUTTON;
+ 815   5                                                      }
+ 816   4                                                      else
+ 817   4                                                      {
+ 818   5                      //                                      buttons |= RIGHT_BUTTON;
+ 819   5                                                              keyboard_dir = BACKSPACE;                       //Assigns the keyboard BACKSPACE key to right click 
+ 820   5                                                      }
+ 821   4                                              }
+ 822   3                                              /// Modified by TLLAU END ///
+ 823   3                                      
+ 824   3                                      t4_data = DEBOUNCE_TIME;
+ 825   3                                      time_4 = 1;
+ 826   3                                      seq4_state = 30;
+ 827   3                              }
+ 828   2                              else if(time_4 == 0)
+ 829   2                              {       // function
+ 830   3                                      if(communication_mode == SPI_MODE)
+ 831   3                                      {
+ 832   4                                              Initiliaze_A320_I2C();
+ 833   4                                              communication_mode = I2C_MODE;
+ 834   4      //                                      L6 = 1; // Modified by TLLAU
+ 835   4                                              led_temp = ~P1;
+ 836   4                                              P1 &= ~0xFC;
+ 837   4                                              P1 |= (led_temp & 0xFC);
+ 838   4                                                      
+ 839   4                                      /*      i2c_enable();
+ 840   4                                              communication_mode = I2C_MODE;
+ 841   4      //                                      L6 = 1; // Modified by TLLAU
+ 842   4                                      */
+ 843   4                                      }
+ 844   3                                      else if(communication_mode == I2C_MODE)
+ 845   3                                      {
+ 846   4                                              Initiliaze_A320();
+ 847   4                                              communication_mode = SPI_MODE;
+ 848   4      //                                      L6 = 0; // Modified by TLLAU
+ 849   4                                              led_temp = ~P1;
+ 850   4                                              P1 &= ~0xFC;
+ 851   4                                              P1 |= (led_temp & 0xFC);
+ 852   4      
+ 853   4                                      /*      spi_enable();
+ 854   4                                              communication_mode = SPI_MODE;
+ 855   4      //                                      L6 = 0; // Modified by TLLAU
+ 856   4                                      */
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 15  
+
+ 857   4                                      }
+ 858   3                                      seq4_state = 25;
+ 859   3                              }
+ 860   2                              break;
+ 861   2                      case 25:
+ 862   2                              if(RIGHT_SW == 1)
+ 863   2                              {
+ 864   3                                      t4_data = DEBOUNCE_TIME;
+ 865   3                                      time_4 = 1;
+ 866   3                                      seq4_state = 30;
+ 867   3                              }
+ 868   2                              break;
+ 869   2                      case 30:
+ 870   2                              if(RIGHT_SW == 0)
+ 871   2                              {
+ 872   3                                      seq4_state = 20;
+ 873   3                              }
+ 874   2                              else if(time_4 == 0)
+ 875   2                              {
+ 876   3      
+ 877   3                                      #ifdef JOYSTICK
+                                                      if((ofn_mode != JOYSTICK_MODE) || (ofn_mode != ROCKER_K_MODE_S) || (ofn_mode != ROCKER_K_MODE_S_C) ||
+             - ((ofn_mode != ROCKER_K_MODE_L) || (ofn_mode != ROCKER_K_MODE_L_8)) || (ofn_mode != ROCKER_K_MODE_L_C))
+                                              #else
+ 880   3                                              if(ofn_mode != JOYSTICK_MODE)
+ 881   3                                      #endif
+ 882   3                                              {
+ 883   4                                                      buttons &= ~RIGHT_BUTTON;
+ 884   4              //                                      buttons &= ~BACKSPACE;  //CWL
+ 885   4                                              }
+ 886   3                                              else
+ 887   3                                              {
+ 888   4                                                      buttons &= ~0x80;       // Clear Joystick Right Button
+ 889   4                                              }
+ 890   3                                              /// Modified by TLLAU END ///
+ 891   3                                      
+ 892   3                                      seq4_state = 0;
+ 893   3                              }
+ 894   2                              break;
+ 895   2                      default:
+ 896   2                              break;
+ 897   2              }
+ 898   1      }
+ 899          
+ 900          
+ 901          //------------------------------------------------------------------------------------
+ 902          // Mode_Select_Switch (Middle Switch)
+ 903          //------------------------------------------------------------------------------------
+ 904          
+ 905          void Mode_Select_Switch(void)
+ 906          {
+ 907   1              switch(seq5_state)
+ 908   1              {
+ 909   2                      case 0:
+ 910   2                              if(MODE_SEL_SW == 0)
+ 911   2                              {
+ 912   3                                      t5_data = DEBOUNCE_TIME;
+ 913   3                                      time_5 = 1;
+ 914   3                                      seq5_state = 10;
+ 915   3                              }
+ 916   2                              break;
+ 917   2                      case 10:
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 16  
+
+ 918   2                              if(MODE_SEL_SW == 1)
+ 919   2                              {
+ 920   3                                      seq5_state = 0;
+ 921   3                              }
+ 922   2                              else if(time_5 == 0)
+ 923   2                              {
+ 924   3                                      // function
+ 925   3                                      rc_flag = 1;
+ 926   3                                      free_scroll = 0;
+ 927   3                                      count_z = 0;
+ 928   3      
+ 929   3                                      ofn_mode++;                     // set OFN Mode (FINGER_MODE, Single Step Rocker, Multiple Step Rocker, Single Step Cont
+             -inuous Rocker and Multiple Step Continuous Rocker)
+ 930   3                                      if(ofn_mode > MODE_NUM)
+ 931   3                                      {
+ 932   4                                              ofn_mode = 0;
+ 933   4                                      }
+ 934   3                                      
+ 935   3                                      switch(ofn_mode)
+ 936   3                                      {
+ 937   4                                              case FINGER_MODE:
+ 938   4                                                      // set to Navigation Mode
+ 939   4                                                      L2 = 0;
+ 940   4                                                      L3 = 1;
+ 941   4                                                      L4 = 1;
+ 942   4                                                      L5 = 1;
+ 943   4                                                      L6 = 1; // Modified by TLLAU
+ 944   4                                                      LED7 = 1; // Modified by TLLAU
+ 945   4                                                      threshold_flag = 0;
+ 946   4                                                      buffer_clear();
+ 947   4                                                      count_z = 0;
+ 948   4                                                      SHUTTER_LOWER_TRES = shutter_motion1;
+ 949   4                                                      SHUTTER_UPPER_TRES = shutter_motion2;
+ 950   4                                                      shutter_flag_temp = SHUTTER_DELAY;
+ 951   4                                                      break;
+ 952   4      
+ 953   4                                              case SCROLL_MODE:
+ 954   4                                                      // reset to Scroll Mode 
+ 955   4                                                      L2 = 1; // 0; Modified by TLLAU         
+ 956   4                                                      L3 = 1; // 0; Modified by TLLAU
+ 957   4                                                      L4 = 1;
+ 958   4                                                      L5 = 0; // 1; Modified by TLLAU 
+ 959   4                                                      L6 = 1; // Modified by TLLAU
+ 960   4                                                      LED7 = 1; // Modified by TLLAU
+ 961   4                                                      buffer_clear();
+ 962   4                                                      count_z = 0;
+ 963   4                                                      SHUTTER_LOWER_TRES = shutter_motion1;
+ 964   4                                                      SHUTTER_UPPER_TRES = shutter_motion2;
+ 965   4                                                      shutter_flag_temp = SHUTTER_DELAY;
+ 966   4                                                      break;                                          
+ 967   4      /*
+ 968   4                                              case ROCKER_K_MODE_S:
+ 969   4                                                      // set to Single Step Rocker (Keyboard) Mode    
+ 970   4                                                      L2 = 0;
+ 971   4                                                      L3 = 1;
+ 972   4                                                      L4 = 1;
+ 973   4                                                      L5 = 1;
+ 974   4                                                      L6 = 1; // Modified by TLLAU
+ 975   4                                                      LED7 = 1; // Modified by TLLAU
+ 976   4                                                      threshold_flag = 1;
+ 977   4                                                      keyboard_dir = 0;
+ 978   4                                                      keyboard_dir_temp = 0;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 17  
+
+ 979   4                                                      SHUTTER_LOWER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+ 980   4                                                      SHUTTER_UPPER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+ 981   4                                                      shutter_flag_temp = 0x0000;
+ 982   4                                                      break;
+ 983   4      */
+ 984   4                                              case ROCKER_K_MODE_L:
+ 985   4                                                      // set to Multiple Step Rocker (Keyboard) Mode  
+ 986   4                                                      eight_way = 0; // Modified by TLLAU             
+ 987   4                                                      L2 = 1;
+ 988   4                                                      L3 = 1;
+ 989   4                                                      L4 = 0; // 1; Modified by TLLAU 
+ 990   4                                                      L5 = 1; // 0; Modified by TLLAU
+ 991   4                                                      L6 = 1; // Modified by TLLAU
+ 992   4                                                      LED7 = 1; // Modified by TLLAU          
+ 993   4                                                      keyboard_dir = 0;
+ 994   4                                                      keyboard_dir_temp = 0;
+ 995   4                                                      SHUTTER_LOWER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+ 996   4                                                      SHUTTER_UPPER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+ 997   4                                                      shutter_flag_temp = 0x0000;
+ 998   4                                                      break;
+ 999   4                                              case ROCKER_K_MODE_S_C:
+1000   4                                                      // set to Single Step Continuous Rocker (Keyboard) Mode 
+1001   4                                                      L2 = 1;
+1002   4                                                      L3 = 0;
+1003   4                                                      L4 = 1;
+1004   4                                                      L5 = 1;
+1005   4                                                      L6 = 1; // Modified by TLLAU
+1006   4                                                      LED7 = 1; // Modified by TLLAU
+1007   4                                                      keyboard_dir = 0;
+1008   4                                                      keyboard_dir_temp = 0;
+1009   4                                                      SHUTTER_LOWER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+1010   4                                                      SHUTTER_UPPER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+1011   4                                                      shutter_flag_temp = 0x0000;
+1012   4                                                      break;
+1013   4      
+1014   4                                              case ROCKER_K_MODE_L_C:
+1015   4                                                      // set to Multiple Step Continuous Rocker (Keyboard) Mode       
+1016   4                                                      L2 = 1;
+1017   4                                                      L3 = 1;
+1018   4                                                      L4 = 0;
+1019   4                                                      L5 = 1;
+1020   4                                                      L6 = 1; // Modified by TLLAU
+1021   4                                                      LED7 = 1; // Modified by TLLAU
+1022   4                                                      keyboard_dir = 0;
+1023   4                                                      keyboard_dir_temp = 0;
+1024   4                                                      SHUTTER_LOWER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+1025   4                                                      SHUTTER_UPPER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+1026   4                                                      shutter_flag_temp = 0x0000;
+1027   4                                                      break;
+1028   4      
+1029   4                                              /// Modified by TLLAU BEGIN ///
+1030   4                                              case JOYSTICK_MODE:     // Add-in Joystick Mode
+1031   4                                                      // set to Joystick Mode (Eight Direction)       
+1032   4                                                      L2 = 1; // 0; Modified by TLLAU                 
+1033   4                                                      L3 = 1; // 0; Modified by TLLAU         
+1034   4                                                      L4 = 1; // 0; Modified by TLLAU         
+1035   4                                                      L5 = 1; // 0; Modified by TLLAU         
+1036   4                                                      L6 = 0; // Modified by TLLAU
+1037   4                                                      LED7 = 1; // Modified by TLLAU
+1038   4                                                      keyboard_dir = 0;
+1039   4                                                      keyboard_dir_temp = 0;
+1040   4                                                      SHUTTER_LOWER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 18  
+
+1041   4                                                      SHUTTER_UPPER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+1042   4                                                      shutter_flag_temp = 0x0000;
+1043   4                                                      break;
+1044   4                                              
+1045   4                                              case ROCKER_K_MODE_L_8:
+1046   4                                                      // set to Multiple Step Rocker (Keyboard) Mode  
+1047   4                                                      eight_way = 1; // Modified by TLLAU             
+1048   4                                                      L2 = 1;
+1049   4                                                      L3 = 1;
+1050   4                                                      L4 = 1; // 1; Modified by TLLAU 
+1051   4                                                      L5 = 1; // 0; Modified by TLLAU
+1052   4                                                      L6 = 1; // Modified by TLLAU
+1053   4                                                      LED7 = 0; // Modified by TLLAU          
+1054   4                                                      keyboard_dir = 0;
+1055   4                                                      keyboard_dir_temp = 0;
+1056   4                                                      SHUTTER_LOWER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+1057   4                                                      SHUTTER_UPPER_TRES = shutter_basic + ((shutter_d * 1) / 10);
+1058   4                                                      shutter_flag_temp = 0x0000;
+1059   4                                                      break;                                  
+1060   4                                              /// Modified by TLLAU END ///
+1061   4                                              default:
+1062   4                                                      break;
+1063   4                                      }
+1064   3      
+1065   3                                      if(communication_mode == I2C_MODE)
+1066   3                                      {
+1067   4                                              led_temp = ~P1;
+1068   4                                              P1 &= ~0xFC;
+1069   4                                              P1 |= (led_temp & 0xFC);
+1070   4                                      }
+1071   3      
+1072   3                                      seq5_state = 20;
+1073   3                              }
+1074   2                              break;
+1075   2                      case 20:
+1076   2                              if(MODE_SEL_SW == 1)
+1077   2                              {
+1078   3                                      t5_data = DEBOUNCE_TIME;
+1079   3                                      time_5 = 1;
+1080   3                                      seq5_state = 30;
+1081   3                              }
+1082   2                              break;
+1083   2                      case 30:
+1084   2                              if(MODE_SEL_SW == 0)
+1085   2                              {
+1086   3                                      seq5_state = 20;
+1087   3                              }
+1088   2                              else if(time_5 == 0)
+1089   2                              {
+1090   3                                      buttons &= ~MIDDLE_BUTTON;
+1091   3                                      seq5_state = 0;
+1092   3                              }
+1093   2                              break;
+1094   2                      default:
+1095   2                              break;
+1096   2              }
+1097   1      }
+1098          
+1099          //------------------------------------------------------------------------------------
+1100          // Dome_Switch (Right Switch)
+1101          //------------------------------------------------------------------------------------
+1102          
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 19  
+
+1103          void Dome_Switch(void)
+1104          {
+1105   1              switch(seq7_state)
+1106   1              {
+1107   2                      case 0:
+1108   2                              if(DOME == 0)
+1109   2                              {
+1110   3                                      t7_data = DEBOUNCE_TIME;
+1111   3                                      time_7 = 1;
+1112   3                                      seq7_state = 10;
+1113   3                              }
+1114   2                              break;
+1115   2                      case 10:
+1116   2                              if(DOME == 1)
+1117   2                              {
+1118   3                                      seq7_state = 0;
+1119   3                              }
+1120   2                              else if(time_7 == 0)
+1121   2                              {
+1122   3                                      free_scroll = 0;
+1123   3                                      buffer_clear();
+1124   3                                      count_z = 0;
+1125   3                                      //buttons |= LEFT_BUTTON;
+1126   3      
+1127   3      
+1128   3                                      #ifdef JOYSTICK
+                                                      if((ofn_mode != JOYSTICK_MODE)||(ofn_mode != ROCKER_K_MODE_S) || (ofn_mode != ROCKER_K_MODE_S_C) || (
+             -(ofn_mode != ROCKER_K_MODE_L) || (ofn_mode != ROCKER_K_MODE_L_8)) || (ofn_mode != ROCKER_K_MODE_L_C))
+                                              #else
+1131   3                                              if(ofn_mode != JOYSTICK_MODE)
+1132   3                                      #endif  
+1133   3                                              {
+1134   4                                                      if(ofn_mode == FINGER_MODE)
+1135   4                                                      {
+1136   5                                                              buttons |= LEFT_BUTTON; 
+1137   5                                                      }
+1138   4                                                      else
+1139   4                                                      {
+1140   5                                                              keyboard_dir = ENTER_KEY;                               //Assigns the keyboard ENTER key to dome switch
+1141   5                                                      }
+1142   4                                              }
+1143   3                                              else
+1144   3                                              {
+1145   4                                                      buttons |= 0x40;        // Set Joystick Left Button
+1146   4                                              }
+1147   3                                              /// Modified by TLLAU END ///
+1148   3      
+1149   3                                      seq7_state = 20;
+1150   3                              }
+1151   2                              break;
+1152   2                      case 20:
+1153   2                              if(DOME == 1)
+1154   2                              {
+1155   3                                      t7_data = DEBOUNCE_TIME;
+1156   3                                      time_7 = 1;
+1157   3                                      seq7_state = 30;
+1158   3                              }
+1159   2                              break;
+1160   2                      case 30:
+1161   2                              if(DOME == 0)
+1162   2                              {
+1163   3                                      seq7_state = 20;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 20  
+
+1164   3                              }
+1165   2                              else if(time_7 == 0)
+1166   2                              {
+1167   3      
+1168   3      
+1169   3                                      #ifdef JOYSTICK
+                                                      if((ofn_mode != JOYSTICK_MODE)||(ofn_mode != ROCKER_K_MODE_S) || (ofn_mode != ROCKER_K_MODE_S_C) || (
+             -(ofn_mode != ROCKER_K_MODE_L) || (ofn_mode != ROCKER_K_MODE_L_8)) || (ofn_mode != ROCKER_K_MODE_L_C))
+                                              #else
+1172   3                                              if(ofn_mode != JOYSTICK_MODE)
+1173   3                                      #endif
+1174   3                                              {
+1175   4                                                      //right_button = 0;
+1176   4                                                      buttons &= ~LEFT_BUTTON;
+1177   4                                              }
+1178   3                                              else
+1179   3                                              {
+1180   4                                                      buttons &= ~0x40;       // Clear Joystick Left Button
+1181   4                                              }
+1182   3                                              /// Modified by TLLAU END ///
+1183   3      
+1184   3                                      seq7_state = 0;
+1185   3                              }
+1186   2                              break;
+1187   2                      default:
+1188   2                              break;
+1189   2              }
+1190   1      }
+1191          
+1192          
+1193          //------------------------------------------------------------------------------------
+1194          // Motion_SPInTWI  (Motion - SPI & TWI)
+1195          //------------------------------------------------------------------------------------
+1196          
+1197          
+1198          void Motion_SPInTWI (void)
+1199          {
+1200   1      //      unsigned char bla;
+1201   1              
+1202   1              /// Modified by TLLAU BEGIN ///
+1203   1              // Add-in Joystick Mode
+1204   1              if(ofn_mode == JOYSTICK_MODE)
+1205   1              {
+1206   2                      switch(seq6_state)
+1207   2                      {
+1208   3                              case 0:                 
+1209   3                                      if(time_6 == 0)
+1210   3                                      {
+1211   4                                              if(MOTION == 0)
+1212   4                                              {
+1213   5                                                      if(communication_mode == SPI_MODE)
+1214   5                                                      {
+1215   6                                                      #ifdef MOTION_BURST
+                                                                      spi_read_motionburst(motion_buffer);
+                                                                      delta_y = motion_buffer[1];
+                                                                      delta_x = motion_buffer[2];
+                                                                      shutter6.b[0] = motion_buffer[4];
+                                                                      shutter6.b[1] = motion_buffer[5];
+                                                                      pix_max = motion_buffer[6];
+                                                                      pix_min = motion_buffer[8];
+              
+                                                                      spi_temp = delta_y;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 21  
+
+                                                                      delta_y = delta_x;
+                                                                      delta_x = spi_temp;
+                                                              #else
+1228   6                                                              delta_x = spi_read_sensor(ADBM_A320_DELTAX_ADDR);
+1229   6                                                              delta_y = spi_read_sensor(ADBM_A320_DELTAY_ADDR);
+1230   6                                                              pix_max = spi_read_sensor(ADBM_A320_MAXIMUMPIXEL_ADDR);
+1231   6                                                              pix_min = spi_read_sensor(ADBM_A320_MINIMUMPIXEL_ADDR);
+1232   6                                                      #endif
+1233   6                                                      }
+1234   5                                                      else if(communication_mode == I2C_MODE)
+1235   5                                                      {
+1236   6                                                              while(i2c_status != I2C_FREE);
+1237   6                                                              i2c_ByteRead(I2C_ADDR, ADBM_A320_MOTION_ADDR, &motion_buffer[0], 9); 
+1238   6                                                              while(i2c_status != I2C_FREE);
+1239   6                                                              delta_x = motion_buffer[1];
+1240   6                                                              delta_y = motion_buffer[2];
+1241   6                                                              shutter6.b[0] = motion_buffer[4];
+1242   6                                                              shutter6.b[1] = motion_buffer[5];
+1243   6                                                              pix_max = motion_buffer[6];
+1244   6                                                              pix_min = motion_buffer[8];
+1245   6                                                      }
+1246   5                                              
+1247   5                                                      count_x_temp = delta_x;
+1248   5                                                      count_y_temp = delta_y;
+1249   5      
+1250   5                                                      data_process();
+1251   5                                              }
+1252   4                                              else
+1253   4                                              {
+1254   5                                                      buffer_clear();
+1255   5                                              }
+1256   4                                              
+1257   4                                              speed_switching();
+1258   4      
+1259   4                                              if((ofn_mode == FINGER_MODE) || (ofn_mode == SCROLL_MODE))
+1260   4                                              {
+1261   5                                                      t6_data = 0;//SENSOR_TIME;
+1262   5                                              }
+1263   4                                              else if(keyboard_tap != 0)
+1264   4                                              {
+1265   5                                                      L7 = 0;
+1266   5                                                      X_Total_Displacement = 0;
+1267   5                                                      Y_Total_Displacement = 0;
+1268   5                                                      keyboard_tap_repeat = keyboard_tap;
+1269   5                                                      keyboard_tap = 0;
+1270   5                                                      t6_data = KEYPRESS_DELAY;
+1271   5                                                      time_6 = 1;
+1272   5                                              }
+1273   4                                              
+1274   4                                              seq6_state = 10;
+1275   4                                      }
+1276   3                                      break;
+1277   3                              case 10:
+1278   3                                      if(time_6 == 0)
+1279   3                                      {                                       
+1280   4                                              if(communication_mode == SPI_MODE)
+1281   4                                              {
+1282   5                                                      shutter1.b[0] = spi_read_sensor(ADBM_A320_SHUTTERUPPER_ADDR);
+1283   5                                                      shutter1.b[1] = spi_read_sensor(ADBM_A320_SHUTTERLOWER_ADDR);
+1284   5                                              }
+1285   4                                              else if(communication_mode == I2C_MODE)
+1286   4                                              {
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 22  
+
+1287   5                                                      while(i2c_status != I2C_FREE);
+1288   5                                                      i2c_ByteRead(I2C_ADDR, ADBM_A320_SHUTTERUPPER_ADDR, &motion_buffer[4], 2); 
+1289   5                                                      while(i2c_status != I2C_FREE);
+1290   5                                                      shutter1.b[0] = motion_buffer[4];
+1291   5                                                      shutter1.b[1] = motion_buffer[5];
+1292   5                                              }
+1293   4                                              
+1294   4                                              //shutter1.b[0] = spi_read_sensor(ADBM_A320_SHUTTERUPPER_ADDR);
+1295   4                                              //shutter1.b[1] = spi_read_sensor(ADBM_A320_SHUTTERLOWER_ADDR);
+1296   4                                      
+1297   4                                              //if(shutter1.w < SHUTTER_THERS_LO)
+1298   4                                              if(GPIO)
+1299   4                                              {
+1300   5                                                      L7 = 0;
+1301   5                                                      X_Total_Displacement = 0;
+1302   5                                                      Y_Total_Displacement = 0;
+1303   5                                                      keyboard_dir = keyboard_tap_repeat;
+1304   5                                                      keyboard_tap1 = keyboard_tap_repeat;
+1305   5                                                      if((ofn_mode == ROCKER_M_MODE) && (ofn_mode == ROCKER_K_MODE))
+1306   5                                                      {
+1307   6                                                              t6_data = KEYPRESS_DELAY;
+1308   6                                                              time_6 = 1;
+1309   6                                                      }
+1310   5                                                      else
+1311   5                                                      {
+1312   6                                                              t6_data = SENSOR_TIME;
+1313   6                                                              time_6 = 1;
+1314   6                                                              seq6_state = 0;
+1315   6                                                      }
+1316   5                                              }
+1317   4      
+1318   4                                              //if(shutter1.w > SHUTTER_THERS_UP)
+1319   4                                              else
+1320   4                                              {
+1321   5                                                      L7 = 1;
+1322   5                                                      X_Total_Displacement = 0;
+1323   5                                                      Y_Total_Displacement = 0;
+1324   5                                                      keyboard_dir = 0;
+1325   5                                                      keyboard_tap1 = 0;
+1326   5                                                      keyboard_tap_repeat = 0;
+1327   5                                                      delta_x = 0;
+1328   5                                                      delta_y = 0;
+1329   5                                                      time_6 = 0;
+1330   5                                                      seq6_state = 0;                                                 
+1331   5                                              }       
+1332   4                                      }
+1333   3                                      break;
+1334   3                              default:
+1335   3                                      break;
+1336   3                      }
+1337   2              }
+1338   1              /// Modified by TLLAU END ///
+1339   1              else
+1340   1              {
+1341   2                      seq6_state = 0;
+1342   2      
+1343   2                      switch(seq6_state)
+1344   2                      {
+1345   3                              case 0:                 
+1346   3                                      //time_6 is a timer that triggers every 8ms
+1347   3                                      if(time_6 == 0)
+1348   3                                      {
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 23  
+
+1349   4                              
+1350   4                                      // This function is to check and negate FPD whenever finger is not present or when 
+1351   4                                      // there is no motion
+1352   4                                      // This overwriting loop can be performed at 20ms interval with no noticeable effect to FPD overwrite 
+             -effectiveness
+1353   4                                              if(time_14 == 0)
+1354   4                                              {
+1355   5                                                      /// NOT PART OF FPD CODE BEGIN ///
+1356   5                                                      if(communication_mode == SPI_MODE)
+1357   5                                                      {
+1358   6                                                              shutter1.b[0] = spi_read_sensor(ADBM_A320_SHUTTERUPPER_ADDR);
+1359   6                                                              shutter1.b[1] = spi_read_sensor(ADBM_A320_SHUTTERLOWER_ADDR);
+1360   6                                                      }
+1361   5                                                      else if(communication_mode == I2C_MODE)
+1362   5                                                      {
+1363   6                                                              while(i2c_status != I2C_FREE);
+1364   6                                                              i2c_ByteRead(I2C_ADDR, ADBM_A320_SHUTTERUPPER_ADDR, &motion_buffer[4], 2); 
+1365   6                                                              while(i2c_status != I2C_FREE);
+1366   6                                                              shutter1.b[0] = motion_buffer[4];
+1367   6                                                              shutter1.b[1] = motion_buffer[5];
+1368   6                                                      }
+1369   5      
+1370   5                                                      //shutter1.b[0] = spi_read_sensor(ADBM_A320_SHUTTERUPPER_ADDR);
+1371   5                                                      //shutter1.b[1] = spi_read_sensor(ADBM_A320_SHUTTERLOWER_ADDR);
+1372   5      
+1373   5                                                      shutter_flag = shutter_flag << 1;
+1374   5                                                      if (L7 == 0)
+1375   5                                                      {
+1376   6                                                              shutter_flag = shutter_flag | 0x0001;
+1377   6                                                      }
+1378   5      
+1379   5                                                      if (L7 == 1)
+1380   5                                                      {
+1381   6                                                      }
+1382   5                                                      /// NOT PART OF FPD CODE END ///
+1383   5      
+1384   5      
+1385   5                                                      if ((motion2 & 0x01))
+1386   5                                                      {       // For illustration these registers are read in normal mode.
+1387   6                                                              // Due to the number of registers to read, it's recommended to use polling mode 
+1388   6                                                              // to save reading time.
+1389   6                                                              
+1390   6                                                                      if(communication_mode == SPI_MODE)
+1391   6                                                                      {
+1392   7                                                                              motion  = spi_read_sensor(ADBM_A320_MOTION_ADDR);
+1393   7                                                                              squal   = spi_read_sensor(ADBM_A320_SQUAL_ADDR);
+1394   7                                                                              pix_avg = spi_read_sensor(ADBM_A320_PIXELSUM_ADDR);
+1395   7                                                                              pix_min = spi_read_sensor(ADBM_A320_MINIMUMPIXEL_ADDR);
+1396   7                                                                              pix_max = spi_read_sensor(ADBM_A320_MAXIMUMPIXEL_ADDR);
+1397   7                                                                              shutter1.b[0] = spi_read_sensor(ADBM_A320_SHUTTERUPPER_ADDR);
+1398   7                                                                              shutter1.b[1] = spi_read_sensor(ADBM_A320_SHUTTERLOWER_ADDR);
+1399   7      
+1400   7                                                                      }
+1401   6                                                                      else if(communication_mode == I2C_MODE)
+1402   6                                                                      {
+1403   7                                                                              while(i2c_status != I2C_FREE);
+1404   7                                                                              i2c_ByteRead(I2C_ADDR, ADBM_A320_MOTION_ADDR, &motion_buffer[0], 9); 
+1405   7                                                                              while(i2c_status != I2C_FREE);
+1406   7                                                                              motion  = motion_buffer[0];
+1407   7                                                                              squal   = motion_buffer[3];
+1408   7                                                                              shutter1.b[0] = motion_buffer[4];
+1409   7                                                                              shutter1.b[1] = motion_buffer[5];
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 24  
+
+1410   7                                                                              pix_max = motion_buffer[6];
+1411   7                                                                              pix_avg = motion_buffer[7];
+1412   7                                                                              pix_min = motion_buffer[8];
+1413   7                                                                      }
+1414   6                                              
+1415   6                                                                                                                                                                                              
+1416   6                                              /*              motion  = spi_read_sensor(ADBM_A320_MOTION_ADDR);
+1417   6                                                              squal   = spi_read_sensor(ADBM_A320_SQUAL_ADDR);
+1418   6                                                              pix_avg = spi_read_sensor(ADBM_A320_PIXELSUM_ADDR);
+1419   6                                                              pix_min = spi_read_sensor(ADBM_A320_MINIMUMPIXEL_ADDR);
+1420   6                                                              pix_max = spi_read_sensor(ADBM_A320_MAXIMUMPIXEL_ADDR);
+1421   6                                                              shutter1.b[0] = spi_read_sensor(ADBM_A320_SHUTTERUPPER_ADDR);
+1422   6                                                              shutter1.b[1] = spi_read_sensor(ADBM_A320_SHUTTERLOWER_ADDR);
+1423   6                                              */
+1424   6      
+1425   6                                                              //Method 2
+1426   6                                                              ///////////////////////////////////////////////////////
+1427   6                                                              ///////////////////////////////////////////////////////
+1428   6                                                              motion2 = motion;
+1429   6      
+1430   6                                                              // If pix_min and pix_min difference is more than 240, it tends to mean that the 
+1431   6                                                              // light source is strong.
+1432   6                                                              // Whereas squal value is used as a check when unit is looking at uniform scene, 
+1433   6                                                              // which tends to signify finger off case.
+1434   6                                                              // Shutter threshold is check too. Very low shutter tends to mean light is shining 
+1435   6                                                              // directly into sensor.
+1436   6                                                              if ( (abs(pix_max - pix_min) > 240) || (squal < 15) || (shutter1.w < 25) )
+1437   6                                                              {       
+1438   7                                                                      if (finger_leave_counter2 >= 8)
+1439   7                                                                      {
+1440   8                                                                              motion2 = motion2 & 0xFE;
+1441   8                                                                              finger_leave_counter2 = 0;
+1442   8                                                                              finger_on_counter = 0;
+1443   8                      //                                                      free_scroll = 0;
+1444   8                                                                      }
+1445   7                                                                      else
+1446   7                                                                      {
+1447   8                                                                              finger_leave_counter2++;
+1448   8                                                                      }
+1449   7      
+1450   7                                                              }
+1451   6               
+1452   6                                                              if ((motion2 & 0x01) == 0)
+1453   6                                                              {
+1454   7                                                                      L7 = !(motion2 & 0x01);                 // show FPD status on LED
+1455   7                                                                      L1 = L7;        //CWL 090109
+1456   7                                                              }
+1457   6      
+1458   6                                                              ///////////////////////////////////////////////////////
+1459   6                                                              ///////////////////////////////////////////////////////
+1460   6      
+1461   6                                                              t14_data = 20;
+1462   6                                                              time_14 = 1;
+1463   6      
+1464   6                                                      }
+1465   5      
+1466   5                                              } //20 milisecond overwrite speed.
+1467   4      
+1468   4      
+1469   4                                              // If MOTION pin is low (or active) the follow sequence is performed.
+1470   4                                              // The function included in here are:
+1471   4                                              // 1) read delta_x and delta_y for reporting
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 25  
+
+1472   4                                              // 2) read other pixel statistics for FPD negation
+1473   4                                              if(MOTION == 0)
+1474   4                                              {
+1475   5                                                      if(communication_mode == SPI_MODE)
+1476   5                                                      {
+1477   6                                                      #ifdef MOTION_BURST
+                                                                      spi_read_motionburst(motion_buffer);
+                                                                      delta_y = motion_buffer[1];
+                                                                      delta_x = motion_buffer[2];
+                                                                      shutter6.b[0] = motion_buffer[4];
+                                                                      shutter6.b[1] = motion_buffer[5];
+                                                                      pix_max = motion_buffer[6];
+                                                                      pix_min = motion_buffer[8];
+              
+                                                                      spi_temp = delta_y;
+                                                                      delta_y = delta_x;
+                                                                      delta_x = spi_temp;
+                                                              #else
+1490   6                                                              delta_x = spi_read_sensor(ADBM_A320_DELTAX_ADDR);
+1491   6                                                              delta_y = spi_read_sensor(ADBM_A320_DELTAY_ADDR);
+1492   6                                                              pix_max = spi_read_sensor(ADBM_A320_MAXIMUMPIXEL_ADDR);
+1493   6                                                              pix_min = spi_read_sensor(ADBM_A320_MINIMUMPIXEL_ADDR);
+1494   6                                                      #endif
+1495   6                                                      }
+1496   5                                                      else if(communication_mode == I2C_MODE)
+1497   5                                                      {
+1498   6                                                              while(i2c_status != I2C_FREE);
+1499   6                                                              i2c_ByteRead(I2C_ADDR, ADBM_A320_MOTION_ADDR, &motion_buffer, 7); 
+1500   6                                                              while(i2c_status != I2C_FREE);
+1501   6                                                              delta_x = motion_buffer[1];
+1502   6                                                              delta_y = motion_buffer[2];
+1503   6                                                              shutter6.b[0] = motion_buffer[4];
+1504   6                                                              shutter6.b[1] = motion_buffer[5];
+1505   6                                                              pix_max = motion_buffer[6];
+1506   6                                                              pix_min = motion_buffer[8];
+1507   6                                                      }       
+1508   5                      /*                      
+1509   5                                                      #ifdef MOTION_BURST
+1510   5                                                              spi_read_motionburst(&motion, &delta_x, &delta_y, &squal, &shutter6.b[0], &shutter6.b[1]);
+1511   5                                                      #else
+1512   5                                                              motion  = spi_read_sensor(ADBM_A320_MOTION_ADDR);
+1513   5                                                              delta_x = spi_read_sensor(ADBM_A320_DELTAX_ADDR);
+1514   5                                                              delta_y = spi_read_sensor(ADBM_A320_DELTAY_ADDR);
+1515   5                                                              squal   = spi_read_sensor(ADBM_A320_SQUAL_ADDR);
+1516   5                                                              shutter6.b[0] = spi_read_sensor(ADBM_A320_SHUTTERUPPER_ADDR);
+1517   5                                                              shutter6.b[1] = spi_read_sensor(ADBM_A320_SHUTTERLOWER_ADDR);
+1518   5                                                      #endif
+1519   5      
+1520   5                                                      shutter1.b[0] = spi_read_sensor(ADBM_A320_SHUTTERUPPER_ADDR);
+1521   5                                                      shutter1.b[1] = spi_read_sensor(ADBM_A320_SHUTTERLOWER_ADDR);
+1522   5                                                      pix_avg = spi_read_sensor(ADBM_A320_PIXELSUM_ADDR);
+1523   5                                                      pix_min = spi_read_sensor(ADBM_A320_MINIMUMPIXEL_ADDR);
+1524   5                                                      pix_max = spi_read_sensor(ADBM_A320_MAXIMUMPIXEL_ADDR);
+1525   5      */
+1526   5      
+1527   5              //CWL
+1528   5                                                      if(TrackSW == 0)
+1529   5                                                      {
+1530   6                                                              delta_x = delta_y = 0;
+1531   6                                                      }
+1532   5      
+1533   5      
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 26  
+
+1534   5                                                      count_x_temp = delta_x;
+1535   5                                                      count_y_temp = delta_y;
+1536   5      
+1537   5      
+1538   5                                                      ///////////////////////////////////////////////////////
+1539   5                                                      //Method 2
+1540   5                                                      ///////////////////////////////////////////////////////
+1541   5      
+1542   5                                                      if ( (delta_x != 0) || (delta_y != 0)) 
+1543   5                                                      {       finger_leave_counter2 = 0;
+1544   6                                                              finger_on_counter++;
+1545   6                                                              if (finger_on_counter > 150)
+1546   6                                                              { finger_on_counter = 149;}
+1547   6      
+1548   6                                                              motion2 = motion2 | 0x01;
+1549   6                                                      }
+1550   5                                              
+1551   5                                                      // Same comparison is done here as above, except that it now includes delta x y into the equation
+1552   5                                                      if ( ( (abs(pix_max - pix_min) > 240) || (squal < 15) || (shutter1.w < 25)) && (delta_x == 0) && (de
+             -lta_y == 0))
+1553   5                                                      {       delta_x = 0;
+1554   6                                                              delta_y = 0;
+1555   6                                                              // Hysteresis of a different time is applied here.
+1556   6                                                              if (finger_leave_counter2 > 5)
+1557   6                                                              {       motion2 = motion2 & 0xFE;
+1558   7                                                                      finger_leave_counter2 = 0;
+1559   7                                                                      finger_on_counter = 0;
+1560   7                                                              }
+1561   6                                                              else
+1562   6                                                              {       motion2 = motion2 | 0x01;}
+1563   6      
+1564   6                                                      }
+1565   5      
+1566   5       
+1567   5                                                      // A delay of 5 cycles is added here to reduce false FPD deactivation during tracking.
+1568   5                                                      if (finger_on_counter >= 5)
+1569   5                                                      {
+1570   6                                                              motion2 = motion2 | 0x01;
+1571   6                                                      }
+1572   5                                                      else
+1573   5                                                      {   motion2 = motion2 & 0xFE;
+1574   6                                                      }
+1575   5      
+1576   5      
+1577   5                                                      L7 = !(motion2 & 0x01);         // show FPD status on LED
+1578   5                                                      L1 = L7;        //CWL 090109
+1579   5                                                      ///////////////////////////////////////////////////////
+1580   5                                                      ///////////////////////////////////////////////////////
+1581   5      
+1582   5                      
+1583   5                                                      data_process();
+1584   5      
+1585   5                                                      send_rocker_data = 0;
+1586   5      
+1587   5                                                      t_continuous_rock_trigger = 1;
+1588   5                                                      t_continuous_rock_trigger_data = 300;
+1589   5      
+1590   5                                                      if ((ofn_mode == ROCKER_K_MODE_L) || (ofn_mode == ROCKER_K_MODE_L_8))
+1591   5                                                      {
+1592   6                                                              time_16 = 1;
+1593   6                                                              t16_data = 800;
+1594   6                                                      }
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 27  
+
+1595   5      
+1596   5      
+1597   5      
+1598   5                                              }
+1599   4                                              else
+1600   4                                              {
+1601   5                                                      buffer_clear();
+1602   5                                              }
+1603   4      
+1604   4                                              speed_switching();
+1605   4      
+1606   4      
+1607   4                                              t6_data = SENSOR_TIME;
+1608   4                                              time_6 = 1;
+1609   4      
+1610   4                                              finger_status = L7;
+1611   4      
+1612   4      
+1613   4      
+1614   4                                              if ((time_16 == 0)&&(finger_status == 0)&&((ofn_mode == ROCKER_K_MODE_L) || (ofn_mode == ROCKER_K_MOD
+             -E_L_8)))
+1615   4                                              {
+1616   5                                                      if (start_continuous_stepping == 0)
+1617   5                                                      {
+1618   6                                                              continuous_delta_x = rocker_delta_x;
+1619   6                                                              continuous_delta_y = rocker_delta_y;
+1620   6                                                      }
+1621   5      
+1622   5                                                      data_process();         
+1623   5              //CWL                                                   
+1624   5                                                      if ((ofn_mode == ROCKER_K_MODE_S ) || (((ofn_mode == ROCKER_K_MODE_L ) || (ofn_mode == ROCKER_K_MODE
+             -_L_8)) && (time_16 != 0)))
+1625   5                                                      {
+1626   6                                                              start_continuous_stepping = 0;
+1627   6                                                      }
+1628   5                                                      else
+1629   5                                                      {
+1630   6                                                              start_continuous_stepping = 1;
+1631   6                                                      }
+1632   5                                              }
+1633   4                                               
+1634   4      
+1635   4                                              if ((t_continuous_rock_trigger == 0) && (finger_status == 0) && ((ofn_mode != ROCKER_K_MODE_L)|| (ofn
+             -_mode != ROCKER_K_MODE_L_8)))
+1636   4                                              {       
+1637   5                                                      if ((start_continuous_stepping == 0) /*|| (time_16 != 0)*/)
+1638   5                                                      {       
+1639   6                                                              continuous_delta_x = rocker_delta_x;
+1640   6                                                              continuous_delta_y = rocker_delta_y;
+1641   6                                                      }
+1642   5                                                      
+1643   5                                              
+1644   5      
+1645   5      
+1646   5                                                      data_process();         
+1647   5              //CWL                                                   
+1648   5                                                      if ((ofn_mode == ROCKER_K_MODE_S ) || (((ofn_mode == ROCKER_K_MODE_L ) || (ofn_mode == ROCKER_K_MODE
+             -_L_8)) && (time_16 != 0)))
+1649   5                                                      {
+1650   6                                                              start_continuous_stepping = 0;
+1651   6                                                      }
+1652   5                                                      else
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 28  
+
+1653   5                                                      {
+1654   6                                                              start_continuous_stepping = 1;
+1655   6                                                      }
+1656   5      
+1657   5                                              }
+1658   4      
+1659   4              //Acceleration parameter settings in Single Step Continuous Rocker Mode
+1660   4                                              if ( (start_continuous_stepping == 1) && (t_continuous_rock_interval == 0) && (ofn_mode == ROCKER_K_M
+             -ODE_S_C) )// && (send_rocker_data == 1) )
+1661   4                                              {       t_continuous_rock_interval = 1;
+1662   5                                                      if (issued_times < n1)                                          // 2    
+1663   5                                                              t_continuous_rock_interval_data = t1;   // 500
+1664   5                                                      else if (issued_times < n2)                                     // 10
+1665   5                                                              t_continuous_rock_interval_data = t2;  // 250
+1666   5                                                      else if (issued_times < n3)                                     // 26  
+1667   5                                                              t_continuous_rock_interval_data = t3;  // 125
+1668   5                                                      else if (issued_times < n4)                                     // 58 
+1669   5                                                              t_continuous_rock_interval_data = t4;   // 62
+1670   5                                                      else if (issued_times > n4)                                     // 58 
+1671   5                                                              t_continuous_rock_interval_data = t5;   // 31
+1672   5      
+1673   5      
+1674   5              //CWL                                   t_continuous_rock_interval_data = 250;
+1675   5      
+1676   5                                                      if (start_continuous_stepping == 1) 
+1677   5                                                      {       rocker_delta_x = continuous_delta_x;
+1678   6                                                              rocker_delta_y = continuous_delta_y;
+1679   6                                                              issued_times++;
+1680   6                                                              if (issued_times > 250)
+1681   6                                                                      issued_times = 251;
+1682   6                                                      }
+1683   5      
+1684   5                                                      data_process();
+1685   5                                              //      send_rocker_data = 0;
+1686   5                                              }
+1687   4      
+1688   4      
+1689   4      
+1690   4              //Acceleration paremeter settings in Multiple Step Continuous Rocker Mode
+1691   4                                              if ( (start_continuous_stepping == 1) && (t_continuous_rock_interval == 0) && (ofn_mode == ROCKER_K_M
+             -ODE_L_C) || ( ((ofn_mode == ROCKER_K_MODE_L) || (ofn_mode == ROCKER_K_MODE_L_8)) && (time_16 == 0) && (t_continuous_rock
+             -_interval == 0) ))// && (send_rocker_data == 1) )
+1692   4                                              {       t_continuous_rock_interval = 1;
+1693   5                                                      if (issued_times < n1)                                          // 2    
+1694   5                                                              t_continuous_rock_interval_data = t1;   // 500
+1695   5                                                      else if (issued_times < n2)                                     // 10
+1696   5                                                              t_continuous_rock_interval_data = t2;  // 250
+1697   5                                                      else if (issued_times < n3)                                     // 26  
+1698   5                                                              t_continuous_rock_interval_data = t3;  // 125
+1699   5                                                      else if (issued_times < n4)                                     // 58 
+1700   5                                                              t_continuous_rock_interval_data = t4;   // 62
+1701   5                                                      else if (issued_times > n4)                                     // 58
+1702   5                                                              t_continuous_rock_interval_data = t5;   // 31
+1703   5      
+1704   5                                                      if ((start_continuous_stepping == 1) /*|| ( ((ofn_mode == ROCKER_K_MODE_L) || (ofn_mode == ROCKER_K_
+             -MODE_L_8)) && (time_16 == 0) )*/)
+1705   5                                                      {
+1706   6                                                              rocker_delta_x = continuous_delta_x;
+1707   6                                                              rocker_delta_y = continuous_delta_y;
+1708   6                                                              issued_times++;
+1709   6                                                              multiple_step_rocker_flag = 1;
+1710   6                                                              if (issued_times > 250)
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 29  
+
+1711   6                                                                      issued_times = 251;
+1712   6                                                      }
+1713   5                                                      data_process();
+1714   5                                              //      send_rocker_data = 0;
+1715   5                                              }
+1716   4      
+1717   4      
+1718   4      
+1719   4      
+1720   4                                              if ( ( (finger_status == 1) && (send_rocker_data == 0) ) || ( (start_continuous_stepping == 1) && (t_
+             -continuous_rock_interval == 0) ) || ( ((ofn_mode == ROCKER_K_MODE_L) || (ofn_mode == ROCKER_K_MODE_L_8)) && (time_16 == 
+             -0) && (t_continuous_rock_interval == 0) ))
+1721   4                                              {
+1722   5                                                      issued_times++;
+1723   5                                                      if ((start_continuous_stepping == 1) /*|| ( ((ofn_mode == ROCKER_K_MODE_L) || (ofn_mode == ROCKER_K_
+             -MODE_L_8)) && (time_16 == 0) )*/)
+1724   5                                                      {       rocker_delta_x = continuous_delta_x;
+1725   6                                                              rocker_delta_y = continuous_delta_y;
+1726   6      
+1727   6                                                      }
+1728   5                                                      data_process();
+1729   5                                              }
+1730   4      
+1731   4                                              if (finger_status == 1)
+1732   4                                              {
+1733   5                                                      start_continuous_stepping = 0;
+1734   5                                                      issued_times = 0;               //CWL
+1735   5      //                                              continuous_delta_x = continuous_delta_y = 0;
+1736   5                                              }
+1737   4      
+1738   4      
+1739   4                                      }
+1740   3                                      break;
+1741   3                              default:
+1742   3                                      break;
+1743   3                      }
+1744   2              }
+1745   1      }
+1746          
+1747          
+1748          
+1749          
+1750          
+1751          //------------------------------------------------------------------------------------
+1752          // USB_Send_Data (Conditions the data to the respective USB format prior to sending the data out)
+1753          //------------------------------------------------------------------------------------
+1754          
+1755          void USB_Send_Data(void)
+1756          {
+1757   1              switch(seq11_state)
+1758   1              {
+1759   2                      case 0:
+1760   2                              if(usb_mode == 1)
+1761   2                              {
+1762   3                                      seq11_state = 10;
+1763   3                              }
+1764   2                              break;
+1765   2                      case 10:
+1766   2                              /// Modified by TLLAU BEGIN ///
+1767   2                              // Joystick Data Packet (step data)
+1768   2                              // x=0,y=0                      x=127,y=0               x=255,y=0
+1769   2                              // (UP-LEFT)            (UP)                    (UP-RIGHT)
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 30  
+
+1770   2      
+1771   2                              // x=0,y=127            x=127,y=127             x=255,y=127
+1772   2                              // (LEFT)                       (CENTRE)                (RIGHT)
+1773   2      
+1774   2                              // x=0,y=255            x=127,y=255             x=255,y=255
+1775   2                              // (DOWN-LEFT)          (DOWN)                  (DOWN-RIGHT)
+1776   2                 
+1777   2      
+1778   2      
+1779   2                      #ifdef JOYSTICK
+                                      if((ofn_mode == ROCKER_K_MODE_S) || (ofn_mode == ROCKER_K_MODE_S_C) || ((ofn_mode == ROCKER_K_MODE_L) |
+             -| (ofn_mode == ROCKER_K_MODE_L_8)) || (ofn_mode == ROCKER_K_MODE_L_C))
+                                      {
+                                              if (key_step == 0x52)   //UP
+                                                      if (key_step2 == 0)
+                                                              keyboard_dir = UP_KEY;
+                                                      else if (key_step2 == LEFT_KEY)
+                                                              keyboard_dir = UP_L_KEY;
+                                                      else if (key_step2 == RIGHT_KEY)
+                                                              keyboard_dir = UP_R_KEY;
+                                                      else
+                                                              keyboard_dir = 0;
+              
+                                              if (key_step == 0x51)   //DOWN
+                                                      if (key_step2 == 0)
+                                                              keyboard_dir = DOWN_KEY;
+                                                      else if (key_step2 == LEFT_KEY)
+                                                              keyboard_dir = DOWN_L_KEY;
+                                                      else if (key_step2 == RIGHT_KEY)
+                                                              keyboard_dir = DOWN_R_KEY;
+                                                      else
+                                                              keyboard_dir = 0;
+              
+                                              if (key_step == 0x4F)   //RIGHT
+                                                      if (key_step2 == 0)
+                                                              keyboard_dir = RIGHT_KEY;
+                                                      else if (key_step2 == UP_KEY)
+                                                              keyboard_dir = UP_R_KEY;
+                                                      else if (key_step2 == DOWN_KEY)
+                                                              keyboard_dir = DOWN_R_KEY;
+                                                      else
+                                                              keyboard_dir = 0;
+              
+                                              if (key_step == 0x50)   //LEFT
+                                                      if (key_step2 == 0)
+                                                              keyboard_dir = LEFT_KEY;
+                                                      else if (key_step2 == UP_KEY)
+                                                              keyboard_dir = UP_L_KEY;
+                                                      else if (key_step2 == DOWN_KEY)
+                                                              keyboard_dir = DOWN_L_KEY;
+                                                      else
+                                                              keyboard_dir = 0;
+                                      }
+              
+                              #endif
+1824   2      
+1825   2                      #ifdef JOYSTICK
+                                      if((ofn_mode == JOYSTICK_MODE) || (ofn_mode == ROCKER_K_MODE_S) || (ofn_mode == ROCKER_K_MODE_S_C) || (
+             -(ofn_mode == ROCKER_K_MODE_L) || (ofn_mode == ROCKER_K_MODE_L_8)) || (ofn_mode == ROCKER_K_MODE_L_C))
+                              #else
+1828   2                              if(ofn_mode == JOYSTICK_MODE) 
+1829   2                      #endif  
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 31  
+
+1830   2                              {                               
+1831   3                                      switch(keyboard_dir)
+1832   3                                      {
+1833   4                                              case UP_KEY:
+1834   4                                                      count_x = 127;
+1835   4                                                      count_y = 0;
+1836   4                                                      break;
+1837   4                                              case DOWN_KEY:
+1838   4                                                      count_x = 127;
+1839   4                                                      count_y = 255;
+1840   4                                                      break;
+1841   4                                              case RIGHT_KEY:
+1842   4                                                      count_x = 255;
+1843   4                                                      count_y = 127;
+1844   4                                                      break;
+1845   4                                              case LEFT_KEY:
+1846   4                                                      count_x = 0;
+1847   4                                                      count_y = 127;
+1848   4                                                      break;
+1849   4                                              case UP_R_KEY:
+1850   4                                                      count_x = 255;
+1851   4                                                      count_y = 0;
+1852   4                                                      break;
+1853   4                                              case DOWN_R_KEY:
+1854   4                                                      count_x = 255;
+1855   4                                                      count_y = 255;
+1856   4                                                      break;
+1857   4                                              case UP_L_KEY:
+1858   4                                                      count_x = 0;
+1859   4                                                      count_y = 0;
+1860   4                                                      break;
+1861   4                                              case DOWN_L_KEY:
+1862   4                                                      count_x = 0;
+1863   4                                                      count_y = 255;
+1864   4                                                      break;
+1865   4                                              default:
+1866   4                                                      count_x = 127;
+1867   4                                                      count_y = 127;
+1868   4                                                      break;
+1869   4                                      }
+1870   3      
+1871   3                                      IN_PACKET[0] = JOYSTICK_USB_MODE;
+1872   3                                      IN_PACKET[1] = count_x;
+1873   3                                      IN_PACKET[2] = count_y; 
+1874   3                                      IN_PACKET[3] = buttons;
+1875   3                                      IN_BUFFER.Ptr = IN_PACKET;
+1876   3                                      IN_BUFFER.Length = JOYSTICK_DATA_LENGTH;
+1877   3      
+1878   3                                      x_raw = count_x;
+1879   3                                      y_raw = count_y;
+1880   3                                      k_raw = 0;
+1881   3      
+1882   3                                      t11_data = JOYSTICK_DELAY;
+1883   3                                      seq11_state = 15;
+1884   3                              }               
+1885   2                              /// Modified by TLLAU END ///
+1886   2      
+1887   2                              else if((ofn_mode == FINGER_MODE) || (ofn_mode == SCROLL_MODE) || (sent_buttons != buttons))
+1888   2                              {
+1889   3                                      // Mouse Data Packet
+1890   3                                      if(sent_buttons != buttons || count_x || count_y || count_z || sent_buttons != keyboard_dir)
+1891   3                                      {
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 32  
+
+1892   4                                              sent_buttons = buttons;
+1893   4      
+1894   4                                              IN_PACKET[0] = MOUSE_MODE;
+1895   4                                              IN_PACKET[1] = buttons;
+1896   4                                              IN_PACKET[2] = count_x; 
+1897   4                                              IN_PACKET[3] = -count_y;
+1898   4                                              IN_PACKET[4] = count_z;
+1899   4                                              IN_BUFFER.Ptr = IN_PACKET;
+1900   4                                              IN_BUFFER.Length = MOUSE_DATA_LENGTH;
+1901   4      
+1902   4                                              x_raw = count_x;
+1903   4                                              y_raw = count_y;
+1904   4                                              k_raw = 0;
+1905   4                                                                      
+1906   4                                              count_x = 0;
+1907   4                                              count_y = 0;
+1908   4                                              count_x0 = 0;
+1909   4                                              count_y0 = 0;
+1910   4      
+1911   4                                              if(free_scroll == 1)
+1912   4                              {
+1913   5                                  t11_data = 80;
+1914   5                                              }
+1915   4                                              else if(free_scroll == 0)
+1916   4                                              {
+1917   5                                                      count_z = 0;
+1918   5                                                      t11_data = 2;
+1919   5                                              }
+1920   4      
+1921   4                                              if(click_flag_temp != click_flag)
+1922   4                                              {
+1923   5                                                      click_flag_temp = click_flag;
+1924   5                                                      if(click_flag != 0)
+1925   5                                                      {
+1926   6                                                              keyboard_dir = keyboard_tap1;
+1927   6                                                              click_flag--;
+1928   6                                                              click_flag = 0;
+1929   6                                                              if(click_flag != 0)
+1930   6                                                              {
+1931   7                                                                      click_flag = 1;
+1932   7                                                              }
+1933   6                                                      }
+1934   5                                              }
+1935   4      
+1936   4                                      seq11_state = 15;
+1937   4                                      }
+1938   3                              }
+1939   2      
+1940   2                              // Keyboard Data Packet (step data)
+1941   2                              #ifndef JOYSTICK
+1942   2                              else if((ofn_mode == ROCKER_K_MODE_S) || (ofn_mode == ROCKER_K_MODE_S_C) || ((ofn_mode == ROCKER_K_MODE
+             -_L) || (ofn_mode == ROCKER_K_MODE_L_8)) || (ofn_mode == ROCKER_K_MODE_L_C))
+1943   2                              {
+1944   3                                      if(keyboard_dir != keyboard_dir_temp)
+1945   3                                      {
+1946   4                                              keyboard_dir_temp = keyboard_dir;
+1947   4                                              click_flag = 0;
+1948   4                                              t11_data = STEP_DELAY;
+1949   4                                      }
+1950   3                                      else if(click_flag != 0)
+1951   3                                      {
+1952   4                                              keyboard_dir = keyboard_tap1;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 33  
+
+1953   4                                              click_flag = 0;
+1954   4                                              t11_data = 1;
+1955   4                                      }
+1956   3      
+1957   3                                      if(keyboard_dir != 0)
+1958   3                                      {
+1959   4                                              IN_PACKET[0] = KEY_MODE;
+1960   4                                              IN_PACKET[1] = 0;
+1961   4                                              IN_PACKET[2] = 0;
+1962   4                                              IN_PACKET[3] = keyboard_dir;
+1963   4                                              IN_PACKET[4] = key_step2;
+1964   4                                              IN_PACKET[5] = 0;
+1965   4                                              IN_PACKET[6] = 0;
+1966   4                                              IN_PACKET[7] = 0;
+1967   4                                              IN_PACKET[8] = 0;
+1968   4                                              IN_BUFFER.Ptr = IN_PACKET;
+1969   4                                              IN_BUFFER.Length = KEY_DATA_LENGTH;
+1970   4      
+1971   4                                              x_raw = 0;
+1972   4                                              y_raw = 0;
+1973   4                                              k_raw = keyboard_dir;
+1974   4      
+1975   4                                              keyboard_dir = 0;
+1976   4      
+1977   4                                              seq11_state = 15;
+1978   4                                      }
+1979   3                              }
+1980   2                                                      
+1981   2                              #endif
+1982   2                              break;
+1983   2      
+1984   2      
+1985   2      
+1986   2                      case 15:
+1987   2                              if(EP_STATUS[1] == EP_IDLE)
+1988   2                              {
+1989   3                                      SendPacket();
+1990   3                                      
+1991   3                                      /// Modified by TLLAU BEGIN ///
+1992   3                                      // Add-in Joystick Mode
+1993   3                                      if((ofn_mode == ROCKER_K_MODE_S) || (ofn_mode == ROCKER_K_MODE_S_C) || ((ofn_mode == ROCKER_K_MODE_L) 
+             -|| (ofn_mode == ROCKER_K_MODE_L_8)) || (ofn_mode == ROCKER_K_MODE_L_C)
+1994   3                                              || (ofn_mode == JOYSTICK_MODE))
+1995   3                                      /// Modified by TLLAU END ///
+1996   3                                      {
+1997   4                                                      seq11_state = 17;
+1998   4                                      }
+1999   3                                      else
+2000   3                                      {
+2001   4                                              
+2002   4                                              seq11_state = 16;
+2003   4                                      }
+2004   3                                      
+2005   3                              }
+2006   2                              break;
+2007   2      
+2008   2      //CWL
+2009   2                      case 16:
+2010   2                              if(EP_STATUS[1] == EP_IDLE)
+2011   2                              {
+2012   3                                      IN_PACKET[0] = KEY_MODE;
+2013   3                                      IN_PACKET[1] = 0;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 34  
+
+2014   3                                      IN_PACKET[2] = 0;
+2015   3                                      IN_PACKET[3] = keyboard_dir;
+2016   3                                      IN_PACKET[4] = 0;
+2017   3                                      IN_PACKET[5] = 0;
+2018   3                                      IN_PACKET[6] = 0;
+2019   3                                      IN_PACKET[7] = 0;
+2020   3                                      IN_PACKET[8] = 0;
+2021   3                                      IN_BUFFER.Ptr = IN_PACKET;
+2022   3                                              IN_BUFFER.Length = KEY_DATA_LENGTH;
+2023   3                                      SendPacket();
+2024   3                                              x_raw = 0;
+2025   3                                              y_raw = 0;
+2026   3                                              k_raw = keyboard_dir;
+2027   3      
+2028   3                                              keyboard_dir = 0;
+2029   3                                      time_11 = 1;
+2030   3                                      seq11_state = 17;       //cwl
+2031   3      
+2032   3                              }
+2033   2                              break;
+2034   2      
+2035   2      
+2036   2                      case 17:
+2037   2                              if(EP_STATUS[1] == EP_IDLE)
+2038   2                              {
+2039   3                                      IN_PACKET[0] = KEY_MODE;
+2040   3                                      IN_PACKET[1] = 0;
+2041   3                                      IN_PACKET[2] = 0;
+2042   3                                      IN_PACKET[3] = 0;
+2043   3                                      IN_PACKET[4] = 0;
+2044   3                                      IN_PACKET[5] = 0;
+2045   3                                      IN_PACKET[6] = 0;
+2046   3                                      IN_PACKET[7] = 0;
+2047   3                                      IN_PACKET[8] = 0;
+2048   3                                      IN_BUFFER.Ptr = IN_PACKET;
+2049   3                                      IN_BUFFER.Length = KEY_DATA_LENGTH;
+2050   3                                      SendPacket();
+2051   3      
+2052   3                                      x_raw = 0;
+2053   3                                      y_raw = 0;
+2054   3                                      keyboard_dir = 0;
+2055   3                                      //k_raw = 0;
+2056   3      
+2057   3                                      click_flag = 0;
+2058   3                                      time_11 = 1;
+2059   3                                      seq11_state = 20;
+2060   3                              }
+2061   2                              break;
+2062   2      
+2063   2                      case 20:
+2064   2                              if(time_11 == 0)
+2065   2                              {
+2066   3                                      if((num_tap > 0)  && ((ofn_mode == ROCKER_K_MODE_S) || (ofn_mode == ROCKER_K_MODE_S_C) || ((ofn_mode =
+             -= ROCKER_K_MODE_L) || (ofn_mode == ROCKER_K_MODE_L_8)) || (ofn_mode == ROCKER_K_MODE_L_C)))
+2067   3                                      {
+2068   4                                              num_tap--;
+2069   4                                              keyboard_dir = keyboard_dir_temp;
+2070   4                                              t11_data = num_tap_count * 20;                          //STEP_DELAY;
+2071   4                                              time_11 = 1;
+2072   4                                              num_tap_count++;
+2073   4                                              if(t11_data > 200)
+2074   4                                              {
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 35  
+
+2075   5                                                      t11_data = 200;
+2076   5                                              }
+2077   4                                              seq11_state = 30;
+2078   4      
+2079   4                                              if (num_tap_count >= 7)
+2080   4                                                      if(((abs((signed char)delta_x) > 2 )|| (abs((signed char)delta_y)) > 2) || (L7 == 0))
+2081   4                                                      {
+2082   5                                                              num_tap = 0;
+2083   5                                                              delta_x = delta_y = X_Acceleration_Buffer = Y_Acceleration_Buffer = count_x0 = count_y0 = X_Total_D
+             -isplacement = Y_Total_Displacement = continuous_delta_x = continuous_delta_y = 0;
+2084   5                                                              seq11_state = 0;
+2085   5                                                              keyboard_dir = 0x00;
+2086   5      //                                                      delta_x = delta_y = X_Acceleration_Buffer = Y_Acceleration_Buffer = count_x0 = count_y0 = keyboar
+             -d_dir = keyboard_tap = keyboard_tap1 = key_step2 = keyboard_tap_repeat = X_Total_Displacement = Y_Total_Displacement = c
+             -ontinuous_delta_x = continuous_delta_y = 0;
+2087   5                                                              buffer_clear(); 
+2088   5                                                              count_x0 = 0;
+2089   5                                                              count_y0 = 0;
+2090   5                                                              count_x1 = 0;
+2091   5                                                              count_y1 = 0;
+2092   5                                                      }
+2093   4                                              
+2094   4                                      }
+2095   3                                      else
+2096   3                                      {
+2097   4                                              seq11_state = 0;
+2098   4      //                                      #ifndef JOYSTICK
+2099   4                                              if (ofn_mode != JOYSTICK_MODE)
+2100   4                                              {
+2101   5      //cwl                                   keyboard_dir = 0x00;
+2102   5      //                                      delta_x = delta_y = X_Acceleration_Buffer = Y_Acceleration_Buffer = count_x0 = count_y0 = keyboard_
+             -dir = key_step2 = keyboard_tap_repeat = X_Total_Displacement = Y_Total_Displacement = continuous_delta_x = continuous_de
+             -lta_y = 0;
+2103   5                                              delta_x = delta_y = X_Acceleration_Buffer = Y_Acceleration_Buffer = count_x0 = count_y0 = X_Total_Dis
+             -placement = Y_Total_Displacement =  0;
+2104   5                                              buffer_clear();
+2105   5                                              count_x0 = 0;
+2106   5                                              count_y0 = 0;
+2107   5                                              count_x1 = 0;
+2108   5                                              count_y1 = 0;
+2109   5                                              }
+2110   4      //                                      #endif
+2111   4                                      }
+2112   3      
+2113   3      
+2114   3                                      if(threshold_flag == 0)
+2115   3                                      {
+2116   4                                              keyboard_dir = 0x00;
+2117   4                                              seq11_state = 0;        
+2118   4                                      }
+2119   3                              }
+2120   2                              break;
+2121   2                      case 30:
+2122   2                              if(time_11 == 0)
+2123   2                              {
+2124   3                                      seq11_state = 0;
+2125   3                                      
+2126   3                              }
+2127   2                              break;
+2128   2                      default:
+2129   2                              break;
+2130   2              }
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 36  
+
+2131   1      }
+2132          
+2133          
+2134          //------------------------------------------------------------------------------------
+2135          // Motion_TWI (Motion - TWI)
+2136          //------------------------------------------------------------------------------------
+2137          
+2138          void Motion_TWI(void)
+2139          {
+2140   1              switch(seq13_state)
+2141   1              {
+2142   2                      case 0:
+2143   2                              if(i2c_status == I2C_FREE)
+2144   2                              {
+2145   3                                      i2c_ByteRead(I2C_ADDR, ADBM_A320_SHUTTERUPPER_ADDR, &motion_buffer, 2); 
+2146   3                                      seq13_state = 10;
+2147   3                              }
+2148   2                              break;
+2149   2                      case 10:
+2150   2                              if(i2c_status == I2C_FREE)
+2151   2                              {
+2152   3                                      shutter1.b[0] = motion_buffer[0];
+2153   3                                      shutter1.b[1] = motion_buffer[1];
+2154   3      
+2155   3                                      shutter_flag = shutter_flag << 1;
+2156   3                                      if(shutter1.w < SHUTTER_UPPER_TRES)
+2157   3                                      {
+2158   4                                              shutter_flag = shutter_flag | 0x0001;
+2159   4                                              L7 = 0;
+2160   4                                      }
+2161   3      
+2162   3                                      if(shutter1.w > SHUTTER_LOWER_TRES)
+2163   3                                      {
+2164   4                                              L7 = 1;
+2165   4                                              keyboard_dir = 0;       //keyboard_dir = 0 when finger lifted up                                                        
+2166   4                                      }
+2167   3      
+2168   3                                      seq13_state = 20;
+2169   3                              }
+2170   2                              break;
+2171   2      
+2172   2                      case 20:
+2173   2                              if(MOTION == 0)
+2174   2                              {
+2175   3                                      seq13_state = 30;
+2176   3                              }
+2177   2                              else
+2178   2                              {
+2179   3                                      seq13_state = 50;
+2180   3                              }
+2181   2                              break;
+2182   2                      case 30:
+2183   2                              if(i2c_status == I2C_FREE)
+2184   2                              {
+2185   3                                      i2c_ByteRead(I2C_ADDR, ADBM_A320_MOTION_ADDR, &motion_buffer, 3); 
+2186   3                                      seq13_state = 40;
+2187   3                              }
+2188   2                              break;
+2189   2                      case 40:
+2190   2                              if(i2c_status == I2C_FREE)
+2191   2                              {
+2192   3                                      delta_x = motion_buffer[1];
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 37  
+
+2193   3                                      delta_y = motion_buffer[2];
+2194   3      
+2195   3                                      data_process();
+2196   3                                      speed_switching();
+2197   3      
+2198   3                                      if((abs(count_x0) + abs(count_y0)) > 10)
+2199   3                                      {
+2200   4                                              left_state = 0;
+2201   4                                              right_state = 0;
+2202   4                                      }
+2203   3      
+2204   3                                      t6_data = SENSOR_TIME;
+2205   3                                      time_6 = 1;
+2206   3                                      seq13_state = 60;       
+2207   3                              }
+2208   2                              break;
+2209   2                      case 50:
+2210   2                              speed_switching();
+2211   2      
+2212   2                              if((abs(count_x0) + abs(count_y0)) > 10)
+2213   2                              {
+2214   3                                      left_state = 0;
+2215   3                                      right_state = 0;
+2216   3                              }
+2217   2      
+2218   2                              t6_data = SENSOR_TIME;
+2219   2                              time_6 = 1;
+2220   2                              seq13_state = 60;
+2221   2                              break;
+2222   2                      case 60:
+2223   2                              if(time_13 == 0)
+2224   2                              {
+2225   3                                      seq13_state = 0;
+2226   3                              }
+2227   2                              break;
+2228   2                      default:
+2229   2                              break;
+2230   2              }
+2231   1      }
+2232          
+2233          
+2234          void data_process(void)
+2235          {
+2236   1              if(((shutter_flag & shutter_flag_temp) == shutter_flag_temp) || (threshold_flag == 0)) // change
+2237   1              {
+2238   2                      // process deltaX and deltaY depend on OFN Mode
+2239   2                      switch(ofn_mode)
+2240   2                      {
+2241   3                              case FINGER_MODE:
+2242   3                                      
+2243   3                                      count_x0 += (signed char) delta_x * step_multiplier_mode1;
+2244   3                                      count_y0 += (signed char) delta_y * step_multiplier_mode1;
+2245   3                                      count_z = 0;
+2246   3                                      break;
+2247   3      
+2248   3                              case SCROLL_MODE:
+2249   3                                      //if(((shutter_flag & shutter_flag_temp) == shutter_flag_temp) || (threshold_flag == 0))
+2250   3                                      {
+2251   4                                              if(((pix_max - pix_min) > 200) || (shutter6.w < 20))
+2252   4                                              {
+2253   5                                                      buffer_clear();
+2254   5                                                      count_z = 0;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 38  
+
+2255   5                                              }
+2256   4                                              else
+2257   4                                              {
+2258   5                                                      if(abs(delta_y) > abs(delta_x))
+2259   5                                                      {
+2260   6                                                              buffer_clear();
+2261   6                                                              mod_z =  mod_z + (signed char) delta_y;
+2262   6                                                                      count_z += mod_z /8;//8;
+2263   6      
+2264   6                                                                      if(abs(3*mod_z) < (72))
+2265   6                                                              {
+2266   7                                                                      free_scroll = 0;
+2267   7                                                              }
+2268   6                                                              else
+2269   6                                                              {
+2270   7                                                                      free_scroll = 1;
+2271   7                                                                      if(count_z < 0)
+2272   7                                                                      {
+2273   8                                                                              count_z = -1;
+2274   8                                                                      }
+2275   7                                                                      else
+2276   7                                                                      {
+2277   8                                                                              count_z = 1;
+2278   8                                                                      }
+2279   7                                                              }
+2280   6                                                              mod_z = mod_z %8;//8;
+2281   6                                                      }
+2282   5                                              }
+2283   4                                      }
+2284   3                                      break;
+2285   3      
+2286   3      
+2287   3                              case ROCKER_K_MODE_S:
+2288   3      
+2289   3                                      eight_way = 0;
+2290   3                                      if ( (L7 == 0) && (start_continuous_stepping == 0) )
+2291   3                                      {       
+2292   4                                              rocker_delta_x=rocker_delta_x+(signed char)delta_x;
+2293   4                                              rocker_delta_y=rocker_delta_y+(signed char)delta_y;
+2294   4                                      }
+2295   3      
+2296   3                                      if ( (L7 == 1) || (start_continuous_stepping == 1) )
+2297   3                                      {
+2298   4                                              keyboard_tap = toggle_step(rocker_delta_x, rocker_delta_y);     // detect swipe
+2299   4                                              if(keyboard_tap != 0)
+2300   4                                              {
+2301   5                                                      keyboard_dir = keyboard_tap;
+2302   5                                                      keyboard_tap1 = keyboard_tap;                                                   
+2303   5                                              }
+2304   4                                              buffer_clear();
+2305   4                                              count_z = 0;
+2306   4                                              rocker_delta_x = 0;
+2307   4                                              rocker_delta_y = 0;
+2308   4                                              send_rocker_data = 1;
+2309   4                                      }
+2310   3      
+2311   3                                      buffer_clear();
+2312   3                                      count_z = 0;
+2313   3                                      break;
+2314   3      
+2315   3                              case ROCKER_K_MODE_L:
+2316   3                              case ROCKER_K_MODE_L_8:
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 39  
+
+2317   3                      
+2318   3                                      if ((L7 == 0)  && (start_continuous_stepping == 0) /*&& (time_16 != 0)*/)
+2319   3                                      {
+2320   4      
+2321   4                                              rocker_delta_x=rocker_delta_x+(signed char)delta_x;
+2322   4                                              rocker_delta_y=rocker_delta_y+(signed char)delta_y;
+2323   4      
+2324   4                                              if ((delta_x >= 2) && (delta_y >= 2)) 
+2325   4                                              {
+2326   5                                                      time_16 = 1;
+2327   5                                                      t16_data = 800;
+2328   5                                              } 
+2329   4      
+2330   4                                              eight_way = 1;
+2331   4      
+2332   4                                              if(communication_mode == SPI_MODE)
+2333   4                                              {
+2334   5      /*CWL 20090310*/                keyboard_tap = toggle_step((signed char)delta_x, (signed char)delta_y); // detect swipe
+2335   5                                              }
+2336   4                                              else if(communication_mode == I2C_MODE)
+2337   4                                              {
+2338   5      /*CWL 20090310*/                keyboard_tap = toggle_step2((signed char)delta_x, (signed char)delta_y);        // detect swipe
+2339   5                                              }
+2340   4      
+2341   4      
+2342   4                                              if(keyboard_tap != 0)
+2343   4                                              {
+2344   5      
+2345   5                                                      if(((abs((signed char)delta_x) + abs((signed char)delta_y))) > 20)      //First layer of filter for free 
+             -scroll mode 
+2346   5                                                      {
+2347   6                                                              if(abs((signed char)delta_x) > abs((signed char)delta_y))               //Determines if it's X or Y direction of
+             - scroll
+2348   6                                                              {
+2349   7                                                                      //Codes to filter free scroll in X direction
+2350   7                                                                      if(abs((signed char)delta_x) > 20)                                                      //2nd layer of filter                                           
+2351   7                                                                      if((abs(count_x1) +  abs(count_x2) + abs(count_x3))> 30)        //3rd laye of filter
+2352   7                                                                      if(abs(count_x1) > 10)                                                                          //4th layer of filter
+2353   7                                                                      if(abs(count_x2) > 20)                                                                          //5th layer of filter
+2354   7                                                                      //num_tap = abs((signed char)delta_x);
+2355   7                                                                      num_tap = abs((signed char)X_Acceleration_Buffer);
+2356   7                                                              }
+2357   6                                                              else
+2358   6                                                              {
+2359   7                                                                      //Codes to filter free scroll in Y direction
+2360   7                                                                      if(abs((signed char)delta_y) > 35)                                                      //2nd layer of filter
+2361   7                                                                      if((abs(count_y1) +  abs(count_y2) + abs(count_y3))> 60)        //3rd layer of filter
+2362   7                                                                      if(abs(count_y1) > 30)                                                                          //4th layer of filter
+2363   7                                                                      if(abs(count_y2) > 20)                                                                          //5th layer of filter
+2364   7                                                                      //num_tap = abs((signed char)delta_y);
+2365   7                                                                      num_tap = abs((signed char)Y_Acceleration_Buffer);
+2366   7                                                              }
+2367   6      
+2368   6                                                              //num_tap = (abs((signed char)delta_x) + abs((signed char)delta_y));
+2369   6                                                              if(num_tap != 0)
+2370   6                                                              if(ofn_mode == ROCKER_M_MODE)
+2371   6                                                              {
+2372   7                                                                      num_tap = num_tap/10;   
+2373   7                                                              }
+2374   6                                                              else
+2375   6                                                              {
+2376   7                                                                      num_tap = num_tap/2;    
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 40  
+
+2377   7                                                              }       
+2378   6                                                      }
+2379   5                                                      else
+2380   5                                                      {
+2381   6                                                              num_tap = 0;
+2382   6                                                              num_tap_count = 0;
+2383   6                                                      }
+2384   5      
+2385   5      
+2386   5      
+2387   5                                                      keyboard_dir = keyboard_tap;
+2388   5                                                      keyboard_tap1 = keyboard_tap;                                                   
+2389   5                                              }
+2390   4                                              buffer_clear();
+2391   4                                              count_z = 0;
+2392   4                                      }
+2393   3                                      
+2394   3                                      if ( (L7 == 1) || (start_continuous_stepping == 1) /*|| (time_16 == 0)*/ )
+2395   3                                      {
+2396   4      
+2397   4      
+2398   4                                              if (L7 == 1) 
+2399   4                                              {
+2400   5                                                      time_16 = 1;
+2401   5                                                      t16_data = 800;
+2402   5                                              }
+2403   4      
+2404   4                                              if ( ( time_16 == 0) || (L7 == 1) && (num_tap == 0) )
+2405   4                                              {
+2406   5                                                      delta_x = delta_y = 0;
+2407   5                                                      if(communication_mode == SPI_MODE)
+2408   5                                                      {
+2409   6      //                                                      if (multiple_step_rocker_flag == 0)
+2410   6      /*CWL 20090310*/                                keyboard_tap = toggle_step(rocker_delta_x, rocker_delta_y);     // detect swipe
+2411   6      //                                                      else
+2412   6      //                                                              keyboard_tap = toggle_step(rocker_delta_x, rocker_delta_y);
+2413   6      
+2414   6                                                      }
+2415   5                                                      else if(communication_mode == I2C_MODE)
+2416   5                                                      {
+2417   6                                                              keyboard_tap = toggle_step2(rocker_delta_x, rocker_delta_y);    // detect swipe ltlung2009
+2418   6                                                      }
+2419   5      
+2420   5                                                      if (L7==1) 
+2421   5                                                      {
+2422   6                                                              keyboard_tap = 0;
+2423   6                                                              key_step2 = 0;
+2424   6                                                              rocker_delta_x = rocker_delta_y = 0;
+2425   6                                                              num_tap = num_tap_count = 0;
+2426   6                                                      }
+2427   5      
+2428   5                                                      if(keyboard_tap != 0)
+2429   5                                                      {
+2430   6                                                              keyboard_dir = keyboard_tap;
+2431   6                                                              keyboard_tap1 = keyboard_tap;                                                   
+2432   6                                                      }
+2433   5                                                      buffer_clear();
+2434   5                                                      count_z = 0;
+2435   5                                                      rocker_delta_x = 0;
+2436   5                                                      rocker_delta_y = 0;
+2437   5              //                                      send_rocker_data = 1;
+2438   5                                                      multiple_step_rocker_flag = 0;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 41  
+
+2439   5                                                      //start_continuous_stepping = 0;
+2440   5                                              }
+2441   4      
+2442   4                                              else
+2443   4                                              {
+2444   5      
+2445   5                                                      t16_data = 800;
+2446   5                                                      time_16 = 1;
+2447   5                                                      delta_x = delta_y = 0;
+2448   5      
+2449   5                                                      if(communication_mode == SPI_MODE)
+2450   5                                                      {
+2451   6                                                              keyboard_tap = toggle_step((signed char)delta_x, (signed char)delta_y); // detect swipe
+2452   6                                                      }
+2453   5                                                      else if(communication_mode == I2C_MODE)
+2454   5                                                      {
+2455   6                                                              keyboard_tap = toggle_step2((signed char)delta_x, (signed char)delta_y);        // detect swipe
+2456   6                                                      }
+2457   5      
+2458   5                                                      if(keyboard_tap != 0)
+2459   5                                                      {
+2460   6                                                              keyboard_dir = keyboard_tap;
+2461   6                                                              keyboard_tap1 = keyboard_tap;                                                   
+2462   6                                                      }
+2463   5                                                      buffer_clear();
+2464   5                                                      count_z = 0;
+2465   5                                              }
+2466   4                                      }
+2467   3                                      break;                  
+2468   3                              
+2469   3                              
+2470   3                              case ROCKER_K_MODE_S_C:
+2471   3      
+2472   3                                      eight_way = 0;
+2473   3                                      delta_x = delta_x * step_multiplier_mode4;
+2474   3                                      delta_y = delta_y * step_multiplier_mode4;
+2475   3      
+2476   3                                      if ( (L7 == 0) && (start_continuous_stepping == 0) )
+2477   3                                      {       
+2478   4                                              rocker_delta_x=rocker_delta_x+(signed char)delta_x;
+2479   4                                              rocker_delta_y=rocker_delta_y+(signed char)delta_y;
+2480   4                                      }
+2481   3      
+2482   3                                      if ( (L7 == 1) || (start_continuous_stepping == 1) )
+2483   3                                      {
+2484   4      //                                      toggle_flag = 1;
+2485   4                                      keyboard_tap = toggle_step(rocker_delta_x, rocker_delta_y);     // detect swipe
+2486   4      
+2487   4      //CWL 20080310                                  if ((keyboard_tap == 79) || (keyboard_tap == 80))
+2488   4      //CWL 20080310                                          keyboard_tap = key_step = key_step2 = 0;
+2489   4                                                                                                      
+2490   4      
+2491   4                                              if(keyboard_tap != 0)
+2492   4                                              {
+2493   5                                                      keyboard_dir = keyboard_tap;
+2494   5                                                      keyboard_tap1 = keyboard_tap;                                                   
+2495   5                                              }
+2496   4      
+2497   4      
+2498   4                                              buffer_clear();
+2499   4                                              count_z = 0;
+2500   4                                              rocker_delta_x = 0;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 42  
+
+2501   4                                              rocker_delta_y = 0;
+2502   4                                              send_rocker_data = 1;
+2503   4                                              //start_continuous_stepping = 0;
+2504   4                                      }
+2505   3                                      break;
+2506   3      
+2507   3      
+2508   3                                      buffer_clear();
+2509   3                                      count_z = 0;
+2510   3                                      break;
+2511   3      
+2512   3                              case ROCKER_K_MODE_L_C:
+2513   3      
+2514   3                                      delta_x = delta_x * step_multiplier_mode5;
+2515   3                                      delta_y = delta_y * step_multiplier_mode5;
+2516   3      
+2517   3                                      if ( (L7 == 0) && (start_continuous_stepping == 0) )
+2518   3                                      {
+2519   4                                              rocker_delta_x=rocker_delta_x+(signed char)delta_x;
+2520   4                                              rocker_delta_y=rocker_delta_y+(signed char)delta_y;
+2521   4                                                      
+2522   4      
+2523   4                                              keyboard_tap = toggle_step2((signed char)delta_x, (signed char)delta_y);        // detect swipe
+2524   4                                              if(keyboard_tap != 0)
+2525   4                                              {
+2526   5                                                      keyboard_dir = keyboard_tap;
+2527   5                                                      keyboard_tap1 = keyboard_tap;                                                   
+2528   5                                              }
+2529   4                                              buffer_clear();
+2530   4                                              count_z = 0;
+2531   4      
+2532   4                                      }
+2533   3      
+2534   3      
+2535   3                                      if ( (L7 == 1) || (start_continuous_stepping == 1) )
+2536   3                                      {
+2537   4                                              delta_x = delta_y = 0;
+2538   4                                              if (multiple_step_rocker_flag == 0)
+2539   4                                                      keyboard_tap = toggle_step2(rocker_delta_x, rocker_delta_y);    // detect swipe
+2540   4                                              else
+2541   4                                                      keyboard_tap = toggle_step(rocker_delta_x, rocker_delta_y);
+2542   4      
+2543   4                                              if (L7==1)
+2544   4                                              {
+2545   5                                                      keyboard_tap = keyboard_tap1 = keyboard_dir =  0;
+2546   5                                                      
+2547   5                                                      key_step2 = 0;
+2548   5                                                      rocker_delta_x = rocker_delta_y = 0;
+2549   5                                                      num_tap = num_tap_count = 0;
+2550   5                                              }
+2551   4      
+2552   4                                              if(keyboard_tap != 0)
+2553   4                                              {
+2554   5                                                      keyboard_dir = keyboard_tap;
+2555   5                                                      keyboard_tap1 = keyboard_tap;                                                   
+2556   5                                              }
+2557   4                                              buffer_clear();
+2558   4                                              count_z = 0;
+2559   4                                              rocker_delta_x = 0;
+2560   4                                              rocker_delta_y = 0;
+2561   4                                              multiple_step_rocker_flag = 0;
+2562   4                                              //start_continuous_stepping = 0;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 43  
+
+2563   4                                      }
+2564   3                                      break;
+2565   3      
+2566   3                              
+2567   3                              /// Modified by TLLAU BEGIN ///
+2568   3                              // Add-in Joystick Mode
+2569   3                              case JOYSTICK_MODE:
+2570   3                                      keyboard_tap = joystick_dir(delta_x, delta_y);  // detect swipe
+2571   3                                      if(keyboard_tap != 0)
+2572   3                                      {
+2573   4                                              keyboard_dir = keyboard_tap;
+2574   4                                              keyboard_tap1 = keyboard_tap;                                                   
+2575   4                                      }
+2576   3                                      buffer_clear();
+2577   3                                      count_z = 0;
+2578   3                                      break;  
+2579   3                              /// Modified by TLLAU END ///
+2580   3      
+2581   3                              default:
+2582   3                                      break;
+2583   3                      }
+2584   2              }
+2585   1      }
+2586          
+2587          unsigned char joystick_dir(signed char deltaX, signed char deltaY)
+2588          {
+2589   1              unsigned char joystick_step;
+2590   1              float atan_temp;
+2591   1      
+2592   1              joystick_step = 0;
+2593   1      
+2594   1              if((time_0 == 0) && (toggle_flag == 0))
+2595   1              {
+2596   2                      toggle_flag = 1;
+2597   2                      deltaX = 0;
+2598   2                      deltaY = 0;
+2599   2                      X_Total_Displacement = 0;
+2600   2                      Y_Total_Displacement = 0;
+2601   2                      t0_data = 30;   
+2602   2                      time_0 = 1;
+2603   2              }
+2604   1      
+2605   1              if(toggle_flag == 1)
+2606   1              {
+2607   2                      if(time_0 == 1)
+2608   2                      {
+2609   3                                      X_Total_Displacement += (signed char) deltaX;
+2610   3                                      Y_Total_Displacement += (signed char) deltaY;
+2611   3                      }
+2612   2                      else if(time_0 == 0)
+2613   2                      {
+2614   3                              toggle_flag = 0;
+2615   3                              
+2616   3                              X_Total_Displacement += (signed char) deltaX;
+2617   3                              Y_Total_Displacement += (signed char) deltaY;
+2618   3                                                      
+2619   3                              if((abs(X_Total_Displacement) + abs(Y_Total_Displacement)) < 10)        
+2620   3                              {
+2621   4                                      X_Total_Displacement = 0;
+2622   4                                      Y_Total_Displacement = 0;
+2623   4                                      deltaX = 0;
+2624   4                                      deltaY = 0;
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 44  
+
+2625   4                              }
+2626   3                              else
+2627   3      
+2628   3                              {
+2629   4                                      X_Total_Displacement += (signed char) deltaX;
+2630   4                                      Y_Total_Displacement += (signed char) deltaY;
+2631   4      
+2632   4                                      atan_temp = atan2(Y_Total_Displacement, X_Total_Displacement + 10);
+2633   4      
+2634   4                                      if(atan_temp < 0)
+2635   4                                              atan_temp += 2 * PI;
+2636   4      
+2637   4                                      // 337.5 deg    -> 022.5 deg ==> RIGHT
+2638   4                                      // 022.5 deg    -> 067.5 deg ==> UP-RIGHT
+2639   4                                      // 067.5 deg    -> 112.5 deg ==> UP
+2640   4                                      // 112.5 deg    -> 157.5 deg ==> UP-LEFT
+2641   4                                      // 157.5 deg    -> 202.5 deg ==> LEFT
+2642   4                                      // 202.5 deg    -> 247.5 deg ==> DOWN-LEFT
+2643   4                                      // 247.5 deg    -> 292.5 deg ==> DOWN
+2644   4                                      // 292.5 deg    -> 337.5 deg ==> DOWN-RIGHT
+2645   4      
+2646   4                                      if((atan_temp < 0.3927) || (atan_temp > 5.8905))
+2647   4                                      {
+2648   5                                              joystick_step = RIGHT_KEY;
+2649   5                                      }
+2650   4                                      else if((atan_temp > 0.3927) && (atan_temp < 1.1781))
+2651   4                                      {
+2652   5                                              joystick_step = UP_R_KEY;
+2653   5                                      }
+2654   4                                      else if((atan_temp > 1.1781) && (atan_temp < 1.9635))
+2655   4                                      {
+2656   5                                              joystick_step = UP_KEY;
+2657   5                                      }
+2658   4                                      else if((atan_temp > 1.9635) && (atan_temp < 2.7489))
+2659   4                                      {
+2660   5                                              joystick_step = UP_L_KEY;
+2661   5                                      }
+2662   4                                      else if((atan_temp > 2.7489) && (atan_temp < 3.5343))
+2663   4                                      {
+2664   5                                              joystick_step = LEFT_KEY;
+2665   5                                      }
+2666   4                                      else if((atan_temp > 3.5343) && (atan_temp < 4.3197))
+2667   4                                      {
+2668   5                                              joystick_step = DOWN_L_KEY;
+2669   5                                      }
+2670   4                                      else if((atan_temp > 4.3197) && (atan_temp < 5.1051))
+2671   4                                      {
+2672   5                                              joystick_step = DOWN_KEY;
+2673   5                                      }
+2674   4                                      else if((atan_temp > 5.1051) && (atan_temp < 5.8905))
+2675   4                                      {
+2676   5                                              joystick_step = DOWN_R_KEY;
+2677   5                                      }
+2678   4      
+2679   4                                      X_Total_Displacement = 0;
+2680   4                                      Y_Total_Displacement = 0;
+2681   4                                      deltaX = 0;
+2682   4                                      deltaY = 0;
+2683   4                                      t0_data = 50;   
+2684   4                                      time_0 = 1;     
+2685   4                              }
+2686   3                      }
+C51 COMPILER V7.10   SEQUENCE                                                              06/02/1987 18:18:26 PAGE 45  
+
+2687   2              }
+2688   1      
+2689   1              return joystick_step;
+2690   1      }       
+2691          
+2692          
+2693          
+2694          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   8999    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =    651       7
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     23    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      5    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

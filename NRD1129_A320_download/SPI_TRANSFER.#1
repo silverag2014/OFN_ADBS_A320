@@ -1,0 +1,291 @@
+
+//;***************************************************************************
+//;
+//;        Copyright 2007 Avago Technologies Limited
+//;    This code is provided by Avago Technologies as a reference.
+//;     Avago Technologies makes no claims or warranties
+//;    to this firmware's suitability for any application.
+//;    All rights reserved. Patent Pending. 
+//;
+//;*************************************************************************** 
+
+#include <c8051f3xx.h>	// SFR declarations
+#include <intrins.h>
+#include <SPI_TRANSFER.h>
+#include <ADBM_A520.h>
+
+
+//------------------------------------------------------------------------------------
+bdata unsigned char dummy_bit;
+sbit dummy_bit7 = dummy_bit^7;
+sbit dummy_bit6 = dummy_bit^6;
+sbit dummy_bit5 = dummy_bit^5;
+sbit dummy_bit4 = dummy_bit^4;
+sbit dummy_bit3 = dummy_bit^3;
+sbit dummy_bit2 = dummy_bit^2;
+sbit dummy_bit1 = dummy_bit^1;
+sbit dummy_bit0 = dummy_bit^0;
+
+#define TIME_D 	1
+#define TIME_D1 1
+
+unsigned char spi_interrupted;
+//------------------------------------------------------------------------------------
+void spi_init(void);
+void spi_write_byte(unsigned char data_in);
+unsigned char spi_read_byte(void);
+void spi_write_sensor(unsigned char addr, unsigned char data_in);
+void spi_write_sensor_int(unsigned char addr, unsigned char data_in);
+unsigned char spi_read_sensor_int(unsigned char addr);
+unsigned char spi_read_sensor(unsigned char addr);
+void delay_us(unsigned char delay);
+void delay1(void);
+
+void spi_read_motionburst(unsigned char *motion, unsigned char *deltaX, unsigned char *deltaY, unsigned char *squal, unsigned char *shutterH, unsigned char *shutterL);
+
+//------------------------------------------------------------------------------------
+void spi_init(void)
+{
+	NCS = 1;
+	SCLK = 1;
+	MISO = 1;
+	MOSI = 1;
+	SHTDOWN = 0;
+	MOTION = 1;
+}
+
+unsigned char spi_read_byte(void)
+{
+	SCLK = 0;	delay_us(TIME_D1);
+	SCLK = 1;	delay_us(TIME_D1);
+	dummy_bit7 = MISO;
+
+	SCLK = 0;	delay_us(TIME_D1);
+	SCLK = 1;	delay_us(TIME_D1);
+	dummy_bit6 = MISO;
+
+	SCLK = 0;	delay_us(TIME_D1);
+	SCLK = 1;	delay_us(TIME_D1);
+	dummy_bit5 = MISO;
+
+	SCLK = 0;	delay_us(TIME_D1);
+	SCLK = 1;	delay_us(TIME_D1);
+	dummy_bit4 = MISO;
+	
+	SCLK = 0;	delay_us(TIME_D1);
+	SCLK = 1;	delay_us(TIME_D1);
+	dummy_bit3 = MISO;
+
+	SCLK = 0;	delay_us(TIME_D1);
+	SCLK = 1;	delay_us(TIME_D1);
+	dummy_bit2 = MISO;
+
+	SCLK = 0;	delay_us(TIME_D1);
+	SCLK = 1;	delay_us(TIME_D1);
+	dummy_bit1 = MISO;
+
+	SCLK = 0;	delay_us(TIME_D1);
+	SCLK = 1;	delay_us(TIME_D1);
+	dummy_bit0 = MISO;
+
+	return dummy_bit;
+}
+
+
+void spi_write_sensor_int(unsigned char addr, unsigned char data_in)
+{
+	spi_interrupted = 1;
+
+	NCS = 1;
+	delay_us(TIME_D);
+	NCS = 0;
+	delay_us(TIME_D);
+	spi_write_byte(addr | 0x80);
+	delay_us(TIME_D);
+	spi_write_byte(data_in);
+	delay_us(TIME_D);
+	NCS = 1;
+}
+
+
+void spi_write_sensor(unsigned char addr, unsigned char data_in)
+{
+	while (1)
+	{	spi_interrupted = 0;
+		NCS = 0;
+		delay_us(TIME_D);
+		spi_write_byte(addr | 0x80);
+		delay_us(TIME_D);
+		spi_write_byte(data_in);
+		delay_us(TIME_D);
+		NCS = 1;
+		if (spi_interrupted == 0)
+		{ break;}
+	}
+
+}
+
+
+unsigned char spi_read_sensor(unsigned char addr)
+{
+	unsigned char temp;
+
+	while (1)
+	{	spi_interrupted = 0;
+		NCS = 0;
+		delay_us(2);
+		spi_write_byte(addr);
+		delay_us(TIME_D);
+		delay1();
+		temp = spi_read_byte();
+		delay_us(2);
+		NCS = 1;
+		if (spi_interrupted == 0)
+		{ break;}
+	}
+
+	return temp;
+}
+
+unsigned char spi_read_sensor_int(unsigned char addr)
+{
+	unsigned char temp;
+
+	spi_interrupted = 1;
+
+	NCS = 1;
+	delay_us(TIME_D);
+	NCS = 0;
+	delay_us(2);
+	spi_write_byte(addr);
+	delay_us(TIME_D);
+	delay1();
+	temp = spi_read_byte();
+	delay_us(2);
+	NCS = 1;
+
+	return temp;
+}
+
+
+void spi_write_byte(unsigned char data_in)
+{
+	P0MDOUT |= 0x04;
+	dummy_bit = data_in;
+
+	SCLK = 0;
+	MOSI = dummy_bit7;	delay_us(TIME_D1);
+	SCLK = 1;			delay_us(TIME_D1);
+
+	SCLK = 0;
+	MOSI = dummy_bit6;	delay_us(TIME_D1);
+	SCLK = 1;			delay_us(TIME_D1);
+
+	SCLK = 0;
+	MOSI = dummy_bit5;	delay_us(TIME_D1);
+	SCLK = 1;			delay_us(TIME_D1);
+
+	SCLK = 0;
+	MOSI = dummy_bit4;	delay_us(TIME_D1);
+	SCLK = 1;			delay_us(TIME_D1);
+
+	SCLK = 0;
+	MOSI = dummy_bit3;	delay_us(TIME_D1);
+	SCLK = 1;			delay_us(TIME_D1);
+
+	SCLK = 0;
+	MOSI = dummy_bit2;	delay_us(TIME_D1);
+	SCLK = 1;			delay_us(TIME_D1);
+
+	SCLK = 0;
+	MOSI = dummy_bit1;	delay_us(TIME_D1);
+	SCLK = 1;			delay_us(TIME_D1);
+
+	SCLK = 0;
+	MOSI = dummy_bit0;	delay_us(TIME_D1);
+	SCLK = 1;			delay_us(TIME_D1);
+
+	P0MDOUT &= ~0x04;
+	MOSI = 1;
+}
+
+#ifdef MOTION_BURST
+void spi_read_motionburst(unsigned char *motion, unsigned char *deltaX, unsigned char *deltaY, unsigned char *squal, unsigned char *shutterH, unsigned char *shutterL)
+{
+	unsigned char spi_temp;
+
+	NCS = 0;
+	spi_write_byte(0x02);
+	delay_us(5);
+	*motion = spi_read_byte();
+	delay_us(TIME_D);
+	*deltaY = spi_read_byte();	//deltaX <--> deltaY
+	delay_us(TIME_D);
+	*deltaX = spi_read_byte();	//deltaY <--> deltaX
+	delay_us(TIME_D);
+	*squal = spi_read_byte();
+	delay_us(TIME_D);
+	*shutterH = spi_read_byte();
+ 	delay_us(TIME_D);
+	*shutterL = spi_read_byte();
+	NCS = 1;
+
+	spi_temp = *deltaY;
+	*deltaY = *deltaX;
+	*deltaX = spi_temp;
+}
+#endif
+
+void delay_us(unsigned char delay)
+{
+	for(;delay > 0; delay--)
+	{
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+		_nop_();
+	}
+}
+
+void delay1(void)
+{
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+	_nop_();
+
+}
+
+

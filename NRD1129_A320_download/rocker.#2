@@ -1,0 +1,942 @@
+
+//;***************************************************************************
+//;
+//;        Copyright 2007 Avago Technologies Limited
+//;    This code is provided by Avago Technologies as a reference.
+//;     Avago Technologies makes no claims or warranties
+//;    to this firmware's suitability for any application.
+//;    All rights reserved. Patent Pending. 
+//;
+//;*************************************************************************** 
+
+#include <c8051f3xx.h>
+#include <rocker.h>
+#include <timer.h>
+#include <stdlib.h>
+
+#define SHUTTER_TIME1 	100
+#define SHUTTER_TIME2 	100
+#define CLICK_TIME 		100
+#define CLICK_STABLE	10
+#define CLICK_DELAY		190
+#define SHUTTER_J		9
+#define SHUTTER_STABLE 	10
+#define SHUTTER_DIFF	2
+
+#define FINGER_MODE		0 //
+
+#define UP_KEY			0x52
+#define DOWN_KEY		0x51
+#define RIGHT_KEY		0x4F
+#define LEFT_KEY		0x50
+
+
+typedef union
+{
+	unsigned int w;
+	unsigned char b[2];
+}
+union16;
+
+
+// state
+unsigned char left_state, right_state, click_state, calibrate_state;
+
+bit toggle_flag;
+signed int X_Total_Displacement, Y_Total_Displacement; 
+extern signed int X_Total_Displacement_main, Y_Total_Displacement_main; 
+unsigned char multiply_num;
+
+// toggle step
+unsigned int shutter_motion1, shutter_motion2;
+
+// shutter calibration
+unsigned int shutter_c, shutter_p, shutter_d, ratio_s;
+unsigned int shutter_set1, shutter_set2;
+unsigned int shutter_mul1, shutter_mul2, shutter_basic;
+unsigned int SHUTTER_UPPER_TRES, SHUTTER_LOWER_TRES;
+bit threshold_flag;
+
+// speed switching
+extern signed char count_x0, count_x1, count_x2, count_x3, count_x4;	
+extern signed char count_y0, count_y1, count_y2, count_y3, count_y4;
+
+extern signed char sign_count_x0, sign_count_x1, sign_count_x2, sign_count_x3, sign_count_x4;	
+extern signed char sign_count_y0, sign_count_y1, sign_count_y2, sign_count_y3, sign_count_y4;
+
+extern union16 shutter0, shutter1, shutter6;
+extern signed char count_x, count_y, count_z;
+extern unsigned char motion; /* delta_x, delta_y;*/
+extern int delta_x, delta_y;  //CWLint
+// flag / temp
+unsigned char click_flag;
+bit rc_flag, sc_flag;
+
+
+// mode
+extern unsigned char free_scroll, ofn_mode;
+
+extern unsigned char buttons;
+
+signed char sign_of ( signed char input);
+void buffer_clear(void);
+//------------------------------------------------------------------------------------
+// Shutter Calibration
+//------------------------------------------------------------------------------------
+// % = 1/value ====> value = 1/%
+// (abs(shutter_c - shutter_p)/shutter) > (1/value) 
+// abs(shutter_c - shutter_p) > (shutter/value) 
+// shutter_d > ratio_s
+
+
+//------------------------------------------------------------------------------------
+// NOKIA PARAMETERS
+//------------------------------------------------------------------------------------
+
+//int rocker_speed = 1;			//use 1(default) - 10
+int polling_period = 50;		//default: 50ms. The lower the value the more steps generated per swipe.
+//unsigned char key_step2 = 0;
+int step_threshold = 20;		//set the threshold below which no motion will be reported
+
+
+//X and Y Thresholds for Multiple Step rocker - 8 way rocker config
+int Y_up_M_Step_Thresh = 13;
+int Y_down_M_Step_Thresh =  -13;
+int X_right_M_Step_Thresh = 13;
+int X_left_M_Step_Thresh =  -13;
+
+//X and Y Thresholds for Single Step rocker - 8 way rocker config
+int Y_up_S_Step_Thresh = 30;
+int Y_down_S_Step_Thresh =  -30;
+int X_right_S_Step_Thresh = 30;
+int X_left_S_Step_Thresh =  -30;
+
+//8 way rocker activation -	1=ON, 0=OFF
+int eight_way = 0;
+
+#ifdef SHUTTER_CALIBRATE
+void Shutter_Calibration(void)
+{
+	switch(calibrate_state)
+	{
+		case 0:
+			if(threshold_flag == 0)
+			{
+				shutter_c = shutter1.w;
+				shutter_p = shutter1.w;
+				calibrate_state = 10;
+			}
+			break;
+		case 10:
+			shutter_p = shutter_c;
+			shutter_c = shutter1.w;
+		
+			shutter_d = abs(shutter_c - shutter_p);
+			if(shutter_c > shutter_p)
+			{
+				ratio_s = shutter_c / SHUTTER_STABLE;
+			}
+			else
+			{
+				ratio_s = shutter_p / SHUTTER_STABLE;
+			}
+			
+			if(shutter_d < ratio_s)
+			{
+				t_calibrate_data = SHUTTER_TIME1;
+				time_calibrate = 1;
+				calibrate_state = 20;
+			}	
+			break;
+
+		case 20:
+			if(shutter_c != shutter1.w)
+			{
+				shutter_p = shutter_c;
+				shutter_c = shutter1.w;
+			
+				shutter_d = abs(shutter_c - shutter_p);
+				if(shutter_c > shutter_p)
+				{
+					ratio_s = shutter_c / SHUTTER_STABLE;
+				}
+				else
+				{
+					ratio_s = shutter_p / SHUTTER_STABLE;
+				}	
+			}
+
+			if(time_calibrate == 0)
+			{
+				shutter_set1 = (shutter_p + shutter_c) / 2;
+				//pix_min_set1 = pix_min;
+				calibrate_state = 30;
+			}
+			else if(shutter_d > ratio_s) 
+			{
+				calibrate_state = 10;
+			}
+			break;
+
+		case 30:
+			shutter_p = shutter_c;
+			shutter_c = shutter1.w;
+		
+			shutter_d = abs(shutter_c - shutter_set1);
+			if(shutter_c > shutter_set1)
+			{
+				ratio_s = shutter_c / SHUTTER_DIFF;
+			}
+			else
+			{
+				ratio_s = shutter_set1 / SHUTTER_DIFF;
+			}
+			
+			if(shutter_d > ratio_s)
+			{
+				calibrate_state = 40;
+			}	
+			break;
+
+		case 40:
+			shutter_p = shutter_c;
+			shutter_c = shutter1.w;
+		
+			shutter_d = abs(shutter_c - shutter_p);
+			if(shutter_c > shutter_p)
+			{
+				ratio_s = shutter_c / SHUTTER_STABLE;
+			}
+			else
+			{
+				ratio_s = shutter_p / SHUTTER_STABLE;
+			}
+			
+			if(shutter_d < ratio_s)
+			{
+				t_calibrate_data = SHUTTER_TIME2;
+				time_calibrate = 1;
+				calibrate_state = 50;
+			}	
+			break;
+
+		case 50:
+			if(shutter_c != shutter1.w)
+			{
+				shutter_p = shutter_c;
+				shutter_c = shutter1.w;
+			
+				shutter_d = abs(shutter_c - shutter_p);
+				if(shutter_c > shutter_p)
+				{
+					ratio_s = shutter_c / SHUTTER_STABLE;
+				}
+				else
+				{
+					ratio_s = shutter_p / SHUTTER_STABLE;
+				}	
+			}
+			
+			if(time_calibrate == 0)
+			{
+				shutter_set2 = (shutter_p + shutter_c) / 2; 
+				//pix_min_set2 = pix_min;
+				calibrate_state = 60;	
+			}
+			else if(shutter_d > ratio_s) 
+			{
+				calibrate_state = 30;	
+			}
+			break;
+
+		case 60:
+			shutter_d = abs(shutter_set1 - shutter_set2);
+			if(shutter_set1 > shutter_set2)
+			{
+				ratio_s = shutter_set1 / SHUTTER_DIFF;
+			}
+			else
+			{
+				ratio_s = shutter_set2 / SHUTTER_DIFF;
+			}
+
+			if(shutter_d > ratio_s) 
+			{
+				calibrate_state = 100;
+			}
+			else
+			{
+				calibrate_state = 30;
+			}
+			break;
+
+		case 100:
+			shutter_d = abs(shutter_set1 - shutter_set2);
+
+			if(shutter_set1 > shutter_set2)
+			{
+				shutter_basic = shutter_set2;			
+			}
+			else
+			{
+				shutter_basic = shutter_set1;
+			}
+
+			if(shutter_d < 300)
+			{
+				shutter_mul1 = 2;
+				shutter_mul2 = 5;
+			}
+			else if(shutter_d < 500)
+			{
+				shutter_mul1 = 2;
+				shutter_mul2 = 5;
+			}
+			else
+			{
+				shutter_mul1 = 2;	
+				shutter_mul2 = 5;	
+			}				
+			
+			SHUTTER_LOWER_TRES = shutter_basic + ((shutter_d * shutter_mul1) / 10);
+			SHUTTER_UPPER_TRES = shutter_basic + ((shutter_d * shutter_mul2) / 10);
+			shutter_motion1 = SHUTTER_LOWER_TRES;
+			shutter_motion2 = SHUTTER_UPPER_TRES;
+			threshold_flag = 1;
+			calibrate_state = 0;
+			break;
+
+		default:
+			break;
+	}
+
+}
+#endif
+
+
+//------------------------------------------------------------------------------------
+// Left click detection
+//------------------------------------------------------------------------------------
+
+#ifdef TAPPING
+void Tap_Detection(void)
+{	
+	if(((abs(count_x) + abs(count_y)) > 10) || (sc_flag == 1))
+	{
+		sc_flag = 0;
+		left_state = 0;
+	}
+
+	switch(left_state)
+	{
+		case 0:
+			if(threshold_flag == 1)
+			{
+				left_state = 5; 
+			}
+			break;
+		case 5:
+			//if(shutter0.w > SHUTTER_UPPER_TRES)
+			if (L7 == 1)
+			{
+				left_state = 10;     
+			}
+			break;
+		case 10:
+			//if(shutter0.w < SHUTTER_LOWER_TRES)
+			if (L7 == 0)
+			{ 
+			//	free_scroll = 0; 
+				count_z = 0;  
+				t_left_data = CLICK_STABLE;	
+				time_left = 1;   
+				left_state = 15;      
+			}
+			break;
+		case 15:
+			if (L7 == 1)
+			//if(shutter0.w > SHUTTER_UPPER_TRES)
+			{
+				left_state = 0;
+			}
+			else if(time_left == 0)
+			{
+				t_left_data = CLICK_DELAY;
+				time_left = 1;
+				left_state = 20;
+			}
+			break;
+		case 20:
+			if(time_left == 0)
+			{
+				left_state = 0;
+			}
+			else if (L7 == 1) //if(shutter0.w > SHUTTER_UPPER_TRES)
+			{        
+				click_flag++;
+				buffer_clear();
+				t_left_data = 0;
+				time_left = 0;
+				left_state = 0;
+			}
+			break;                        
+		default:
+			break;
+	}
+}
+
+
+//------------------------------------------------------------------------------------
+// Click action - only function in FINGER_MODE
+//------------------------------------------------------------------------------------
+
+void Click_Action(void)
+{
+	switch(click_state)
+	{
+		case 0:
+			if((click_flag != 0) && (ofn_mode == FINGER_MODE))	
+			{
+				buttons &= ~LEFT_BUTTON;
+				if(ofn_mode == FINGER_MODE)
+				{
+					buttons |= LEFT_BUTTON;
+				}
+				t_click_data = CLICK_TIME;
+				time_click = 1; 
+				click_state = 10;
+			}
+			else if(time_click == 1)
+			{
+				buffer_clear();
+			}
+			break;
+		case 10:
+			if(time_click == 0)
+			{
+				buttons &= ~LEFT_BUTTON;
+				click_flag--;
+				click_flag = 0;
+				if(click_flag != 0)
+				{
+					click_flag = 1;
+				}
+				t_click_data = CLICK_TIME;
+				time_click = 1;
+				click_state = 0;
+			}
+			else
+			{
+				buffer_clear();
+			}  
+			break; 
+		default:
+			break;
+	}
+}
+
+
+//------------------------------------------------------------------------------------
+// Right click detection - only function in FINGER_MODE
+//------------------------------------------------------------------------------------
+
+void Right_Detection(void)
+{
+	if(count_x | count_y)
+	{
+		right_state = 0;
+	}
+	if(rc_flag == 1)
+	{
+		right_state = 50;
+	}
+
+	switch(right_state)
+	{
+		case 0:
+			if(threshold_flag == 1)
+			{
+				right_state = 10; 
+			}
+			else
+			{
+				right_state = 10;		
+			}
+			break;
+		case 10:
+			if (L7 == 0)
+			//if(shutter0.w < SHUTTER_LOWER_TRES)
+			{ 
+			//	free_scroll = 0;  
+				count_z = 0;    
+				t_right_data = 1000;
+				time_right = 1;   
+				right_state = 20;      
+			}
+			break;
+		case 20:
+			if(time_right == 0)
+			{
+				right_state = 30;
+			}
+			if (L7 == 1)
+			//if(shutter0.w > SHUTTER_UPPER_TRES)
+			{        
+				time_right = 0;
+				right_state = 0;      
+			}
+			break;   
+		case 30:
+			buttons &= ~RIGHT_BUTTON;
+			if(ofn_mode == FINGER_MODE)
+			{
+				buttons |= RIGHT_BUTTON;
+			}
+			t_right_data = 8;
+			time_right = 1; 
+			right_state = 40;
+			break; 
+		case 40:
+			if(time_right == 0)
+			{
+				buttons &= ~RIGHT_BUTTON;
+				right_state = 0;
+			}  
+			break;
+		case 50:	
+			if (L7 == 1)
+			//if(shutter0.w > SHUTTER_UPPER_TRES)
+			{	
+				rc_flag = 0;
+				right_state = 0;     
+			}
+			break;	                           
+		default:
+			break;
+	}
+}
+#endif 
+
+
+//------------------------------------------------------------------------------------
+// Speed Switching
+//------------------------------------------------------------------------------------
+
+void speed_switching(void)
+{
+	shutter0.w = shutter1.w;
+
+	count_x = count_x0;
+	count_y = count_y0;
+
+	sign_count_x3=sign_of(count_x3);
+	sign_count_x2=sign_of(count_x2);
+	sign_count_x1=sign_of(count_x1);
+	sign_count_y3=sign_of(count_y3);
+	sign_count_y2=sign_of(count_y2);
+	sign_count_y1=sign_of(count_y1);
+
+	count_x3 = count_x2;
+	count_y3 = count_y2;
+	count_x2 = count_x1;
+	count_y2 = count_y1;
+	count_x1 = (signed char) delta_x;
+	count_y1 = (signed char) delta_y;
+
+}
+
+
+//------------------------------------------------------------------------------------
+// Clear CountX and CountY buffer
+//------------------------------------------------------------------------------------
+
+void buffer_clear(void)
+{
+	count_x = 0;
+//  	count_x0 = 0;
+//  	count_x1 = 0;
+//  	count_x2 = 0;
+//  	count_x3 = 0;
+//  	count_x4 = 0;
+  	count_y = 0;
+//  	count_y0 = 0;
+//  	count_y1 = 0;
+//  	count_y2 = 0;
+//  	count_y3 = 0;
+//  	count_y4 = 0;
+}
+
+
+//------------------------------------------------------------------------------------
+// Toggle Step (Swipe Detection)
+//------------------------------------------------------------------------------------
+
+unsigned char toggle_step(int X_Total_Displacement, int Y_Total_Displacement)
+{
+	key_step = 0;
+
+	toggle_flag = 0;
+	if((abs(X_Total_Displacement) + abs(Y_Total_Displacement)) < 20)	
+	{
+		X_Total_Displacement = 0;
+		Y_Total_Displacement = 0;
+	}
+	else
+	{
+		if(eight_way == 1)
+		{
+			if(abs(Y_Total_Displacement) > abs(X_Total_Displacement))
+			{
+				if(Y_Total_Displacement > 0)
+				{
+					key_step = UP_KEY;
+					if(X_Total_Displacement > X_right_S_Step_Thresh)
+					{	
+						key_step2 = RIGHT_KEY;
+					}
+					else if (X_Total_Displacement < X_left_S_Step_Thresh)
+					{	
+						key_step2 = LEFT_KEY;
+					}
+					else
+					{
+						key_step2 = 0;
+					}
+				}
+				else
+				{
+					key_step = DOWN_KEY;
+					if(X_Total_Displacement > X_right_S_Step_Thresh)
+					{	
+						key_step2 = RIGHT_KEY;
+					}
+					else if (X_Total_Displacement < X_left_S_Step_Thresh)
+					{	
+						key_step2 = LEFT_KEY;
+					}
+					else
+					{
+						key_step2 = 0;
+					}	
+				}
+			}
+			else
+			{
+				if(X_Total_Displacement > 0)
+				{
+					key_step = RIGHT_KEY;
+					if(Y_Total_Displacement > Y_up_S_Step_Thresh)
+					{	
+						key_step2 = UP_KEY;
+					}
+					else if (Y_Total_Displacement < Y_down_S_Step_Thresh)
+					{	
+						key_step2 = DOWN_KEY;
+					}
+					else
+					{
+						key_step2 = 0;
+					}	
+				}
+				else
+				{
+					key_step = LEFT_KEY;
+					if(Y_Total_Displacement > Y_up_S_Step_Thresh)
+					{	
+						key_step2 = UP_KEY;
+					}
+					else if (Y_Total_Displacement < Y_down_S_Step_Thresh)
+					{	
+						key_step2 = DOWN_KEY;
+					}
+					else
+					{
+						key_step2 = 0;
+					}	
+				}
+			}
+		}
+
+		else if(eight_way == 0)
+		{
+			key_step2 = 0;
+			if(abs(Y_Total_Displacement) > abs(X_Total_Displacement))
+			{
+				if(Y_Total_Displacement > 10)
+				{
+					key_step = UP_KEY;
+					X_Total_Displacement = 0;
+					Y_Total_Displacement = 0;
+				}
+				else if(Y_Total_Displacement < -10)
+				{
+					key_step = DOWN_KEY;
+					X_Total_Displacement = 0;
+					Y_Total_Displacement = 0;
+				}
+				else
+				{
+					key_step = 0;
+					key_step2 = 0;
+				}
+			}
+			else
+			{
+				if(X_Total_Displacement > 12)
+				{
+					key_step = RIGHT_KEY;
+					X_Total_Displacement = 0;
+					Y_Total_Displacement = 0;
+				}
+				else if(X_Total_Displacement < -12)
+				{
+					key_step = LEFT_KEY;
+					X_Total_Displacement = 0;
+					Y_Total_Displacement = 0;
+				}
+				else
+				{
+					key_step = 0;
+					key_step2 = 0;
+				}
+			}
+
+		}
+		
+	}
+
+	return key_step;
+}
+
+
+
+
+unsigned char toggle_step2(int deltaX, int deltaY)
+{
+	key_step = 0;
+
+	if((time_0 == 0) && (toggle_flag == 0))
+	{
+		toggle_flag = 1;
+
+		if (finger_status == 1 )
+		{
+			X_Total_Displacement = 0;
+			Y_Total_Displacement = 0;
+		} 
+						
+		key_step = 0;
+		key_step2 = 0;
+
+		t0_data = 30;	
+		time_0 = 1;
+	}
+
+	if(toggle_flag == 1)
+	{	
+
+		if(time_0 == 1)
+		{
+			if((X_Total_Displacement < 0) && (deltaX > 0))
+			{
+				X_Total_Displacement = 0;
+			}
+			else if((X_Total_Displacement > 0) && (deltaX < 0))
+			{
+				X_Total_Displacement = 0;
+			}
+
+			if((Y_Total_Displacement < 0) && (deltaY > 0))
+			{
+				Y_Total_Displacement = 0;
+			}
+			else if((Y_Total_Displacement > 0) && (deltaY < 0))
+			{
+				Y_Total_Displacement = 0;
+			}
+
+			X_Total_Displacement += /*(signed char)*/ deltaX;
+			Y_Total_Displacement += /*(signed char)*/ deltaY;
+			if (L7==0)
+			{
+				X_Acceleration_Buffer = X_Total_Displacement;
+				Y_Acceleration_Buffer = Y_Total_Displacement;
+			}
+
+
+			deltaX = deltaY = 0;	
+
+		}
+		else if(time_0 == 0)
+		{
+			toggle_flag = 0;
+			if((abs(X_Total_Displacement) + abs(Y_Total_Displacement)) < step_threshold)	
+			{
+
+				if (finger_status == 1 )
+				{
+					X_Total_Displacement = 0;
+					Y_Total_Displacement = 0;
+				} 
+
+			}
+			else
+			{
+				if(eight_way == 1)
+				{
+					if(abs(Y_Total_Displacement) > abs(X_Total_Displacement))
+					{
+						if(Y_Total_Displacement > 20)
+						{
+							key_step = UP_KEY;
+							if(X_Total_Displacement > X_right_M_Step_Thresh)
+							{	
+								key_step2 = RIGHT_KEY;
+							}
+							else if (X_Total_Displacement < X_left_M_Step_Thresh)
+							{	
+								key_step2 = LEFT_KEY;
+							}
+							else
+							{
+								key_step2 = 0;
+							}
+						}
+						else if (Y_Total_Displacement < -20)
+						{
+							key_step = DOWN_KEY;
+							if(X_Total_Displacement > X_right_M_Step_Thresh)
+							{	
+								key_step2 = RIGHT_KEY;
+							}
+							else if (X_Total_Displacement < X_left_M_Step_Thresh)
+							{	
+								key_step2 = LEFT_KEY;
+							}
+							else
+							{
+								key_step2 = 0;
+							}	
+						}
+						else 
+						{
+							key_step = 0;
+							key_step2 = 0;
+						}
+
+					}
+					else
+					{
+						if(X_Total_Displacement > 20)
+						{
+							key_step = RIGHT_KEY;
+							if(Y_Total_Displacement > Y_up_M_Step_Thresh)
+							{	
+								key_step2 = UP_KEY;
+							}
+							else if (Y_Total_Displacement < Y_down_M_Step_Thresh)
+							{	
+								key_step2 = DOWN_KEY;
+							}
+							else
+							{
+								key_step2 = 0;
+							}	
+						}
+						else if(X_Total_Displacement < -20)
+						{
+							key_step = LEFT_KEY;
+							if(Y_Total_Displacement > Y_up_M_Step_Thresh)
+							{	
+								key_step2 = UP_KEY;
+							}
+							else if (Y_Total_Displacement < Y_down_M_Step_Thresh)
+							{	
+								key_step2 = DOWN_KEY;
+							}
+							else
+							{
+								key_step2 = 0;
+							}	
+						}
+						else
+						{
+							key_step = 0;
+							key_step2 = 0;
+						}
+					}
+				}
+				else if(eight_way == 0)
+				{
+					key_step2 = 0;
+					if(abs(Y_Total_Displacement) > abs(X_Total_Displacement))
+					{
+						if(Y_Total_Displacement > 10)
+						{
+							key_step = UP_KEY;
+							X_Total_Displacement = 0;
+							Y_Total_Displacement = 0;
+						}
+						else if(Y_Total_Displacement < -10)
+						{
+							key_step = DOWN_KEY;
+							X_Total_Displacement = 0;
+							Y_Total_Displacement = 0;
+						}
+						else
+						{
+							key_step = 0;
+							key_step2 = 0;
+						}
+					}
+					else
+					{
+						if(X_Total_Displacement > 12)
+						{
+							key_step = RIGHT_KEY;
+							X_Total_Displacement = 0;
+							Y_Total_Displacement = 0;
+						}
+						else if(X_Total_Displacement < -12)
+						{
+							key_step = LEFT_KEY;
+							X_Total_Displacement = 0;
+							Y_Total_Displacement = 0;
+						}
+						else
+						{
+							key_step = 0;
+							key_step2 = 0;
+						}
+					}
+
+				}
+
+				t0_data = polling_period;
+				time_0 = 1;	
+			}
+		}
+	}
+
+	return key_step;
+}
+
+
+
+
+
+
+signed char sign_of ( signed char input)
+{
+	if (input > 0)
+	return 1;
+	if (input < 0)
+	return -1;
+	if (input == 0)
+	return 0;
+}
+
+
+
+
+

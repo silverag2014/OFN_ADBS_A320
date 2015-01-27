@@ -1,0 +1,175 @@
+C51 COMPILER V7.10   F3XX_USB0_REPORTHANDLER                                               06/02/1987 18:18:25 PAGE 1   
+
+
+C51 COMPILER V7.10, COMPILATION OF MODULE F3XX_USB0_REPORTHANDLER
+OBJECT MODULE PLACED IN F3xx_USB0_ReportHandler.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\c51.exe F3xx_USB0_ReportHandler.c DB OE LARGE OT(7,SPEED)
+
+line level    source
+
+   1          //-----------------------------------------------------------------------------
+   2          // F3xx_USB0_ReportHandler.c
+   3          //-----------------------------------------------------------------------------
+   4          // Copyright 2005 Silicon Laboratories, Inc.
+   5          // http://www.silabs.com
+   6          //
+   7          // Program Description:
+   8          //
+   9          // Contains functions and variables dealing with Input and Output
+  10          // HID reports.
+  11          //
+  12          // How To Test:    See Readme.txt
+  13          //
+  14          //
+  15          // FID:            3XX000038
+  16          // Target:         C8051F340
+  17          // Tool chain:     Keil C51 7.50 / Keil EVAL C51
+  18          //                 Silicon Laboratories IDE version 2.6
+  19          // Command Line:   See Readme.txt
+  20          // Project Name:   F3xx_MouseExample
+  21          //
+  22          // Release 1.1
+  23          //    -Minor code comment changes
+  24          //    -16 NOV 2006
+  25          // Release 1.0
+  26          //    -Initial Revision (PD)
+  27          //    -07 DEC 2005
+  28          //
+  29          
+  30          
+  31          // ----------------------------------------------------------------------------
+  32          // Header files
+  33          // ----------------------------------------------------------------------------
+  34          
+  35          #include "F3xx_USB0_ReportHandler.h"
+  36          #include "F3xx_USB0_InterruptServiceRoutine.h"
+  37          #include "F3xx_USB0_Mouse.h"
+  38          
+  39          
+  40          // ----------------------------------------------------------------------------
+  41          // Local Function Prototypes
+  42          // ----------------------------------------------------------------------------
+  43          
+  44          // ****************************************************************************
+  45          // Add custom Report Handler Prototypes Here
+  46          // ****************************************************************************
+  47          
+  48          void IN_Report(void);
+  49          void OUT_Report(void);
+  50          
+  51          // ----------------------------------------------------------------------------
+  52          // Local Definitions
+  53          // ----------------------------------------------------------------------------
+  54          
+  55          // ****************************************************************************
+C51 COMPILER V7.10   F3XX_USB0_REPORTHANDLER                                               06/02/1987 18:18:25 PAGE 2   
+
+  56          // Set Definitions to sizes corresponding to the number of reports
+  57          // ****************************************************************************
+  58          
+  59          #define IN_VECTORTABLESize 1
+  60          #define OUT_VECTORTABLESize 1
+  61          
+  62          // ----------------------------------------------------------------------------
+  63          // Global Constant Declaration
+  64          // ----------------------------------------------------------------------------
+  65          
+  66          
+  67          // ****************************************************************************
+  68          // Link all Report Handler functions to corresponding Report IDs
+  69          // ****************************************************************************
+  70          
+  71          const VectorTableEntry code IN_VECTORTABLE[IN_VECTORTABLESize] =
+  72          {
+  73             // FORMAT: Report ID, Report Handler
+  74             0, IN_Report
+  75          };
+  76          
+  77          // ****************************************************************************
+  78          // Link all Report Handler functions to corresponding Report IDs
+  79          // ****************************************************************************
+  80          const VectorTableEntry code OUT_VECTORTABLE[OUT_VECTORTABLESize] =
+  81          {
+  82             // FORMAT: Report ID, Report Handler
+  83             0, OUT_Report
+  84          };
+  85          
+  86          
+  87          // ----------------------------------------------------------------------------
+  88          // Global Variable Declaration
+  89          // ----------------------------------------------------------------------------
+  90          
+  91          BufferStructure IN_BUFFER, OUT_BUFFER;
+  92          
+  93          // ----------------------------------------------------------------------------
+  94          // Local Functions
+  95          // ----------------------------------------------------------------------------
+  96          
+  97          // ****************************************************************************
+  98          // Add all Report Handler routines here
+  99          // ****************************************************************************
+ 100          
+ 101          
+ 102          // ****************************************************************************
+ 103          // For Input Reports:
+ 104          // Point IN_BUFFER.Ptr to the buffer containing the report
+ 105          // Set IN_BUFFER.Length to the number of bytes that will be
+ 106          // transmitted.
+ 107          //
+ 108          // REMINDER:
+ 109          // Systems using more than one report must define Report IDs
+ 110          // for each report.  These Report IDs must be included as the first
+ 111          // byte of an IN report.
+ 112          // Systems with Report IDs should set the FIRST byte of their buffer
+ 113          // to the value for the Report ID
+ 114          // AND
+ 115          // must transmit Report Size + 1 to include the full report PLUS
+ 116          // the Report ID.
+ 117          //
+C51 COMPILER V7.10   F3XX_USB0_REPORTHANDLER                                               06/02/1987 18:18:25 PAGE 3   
+
+ 118          // ****************************************************************************
+ 119          
+ 120          
+ 121          void IN_Report(void){
+ 122   1      
+ 123   1              IN_PACKET[0] = 0;       //Report ID
+ 124   1              IN_PACKET[1] = 0;       //Buttons
+ 125   1              IN_PACKET[2] = 0;       //X-Axis High Byte
+ 126   1              IN_PACKET[3] = 0;       //X-Axis Low Byte
+ 127   1              IN_PACKET[4] = 0;       //Y-Axis High Byte
+ 128   1              IN_PACKET[5] = 0;       //Y-Axis Low Byte
+ 129   1              IN_PACKET[6] = 0;       //Z-Axis
+ 130   1      
+ 131   1         // point IN_BUFFER pointer to data packet and set
+ 132   1         // IN_BUFFER length to transmit correct report size
+ 133   1      }
+ 134          
+ 135          
+ 136          // ****************************************************************************
+ 137          // For Output Reports:
+ 138          // Data contained in the buffer OUT_BUFFER.Ptr will not be
+ 139          // preserved after the Report Handler exits.
+ 140          // Any data that needs to be preserved should be copyed from
+ 141          // the OUT_BUFFER.Ptr and into other user-defined memory.
+ 142          //
+ 143          // ****************************************************************************
+ 144          
+ 145          void OUT_Report(void)
+ 146          {
+ 147   1      }
+ 148          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     17    ----
+   CONSTANT SIZE    =      8    ----
+   XDATA SIZE       =      8    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

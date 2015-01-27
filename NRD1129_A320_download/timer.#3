@@ -1,0 +1,654 @@
+//;***************************************************************************
+//;
+//;        Copyright 2007 Avago Technologies Limited
+//;    This code is provided by Avago Technologies as a reference.
+//;     Avago Technologies makes no claims or warranties
+//;    to this firmware's suitability for any application.
+//;    All rights reserved. Patent Pending. 
+//;
+//;*************************************************************************** 
+
+//------------------------------------------------------------------------------------
+// Includes
+//------------------------------------------------------------------------------------
+
+#include <c8051f3xx.h>	// SFR declarations
+
+//------------------------------------------------------------------------------------
+// CONSTANT
+//------------------------------------------------------------------------------------
+#define SYSCLK24000000
+
+#define TIMER0
+#define TIMER1
+#define TIMER3
+#define TIMER4
+#define TIMER5
+#define TIMER6
+#define TIMER7
+#define TIMER11
+#define TIMER13
+
+#define TOGGLE
+#define SHUTTER_CALIBRATE
+#define TAPPING
+#define TEMPORARY
+
+//------------------------------------------------------------------------------------
+// Global VARIABLES
+//------------------------------------------------------------------------------------
+#ifdef TIMER0
+unsigned int data t0_data;
+bit bdata time_0;
+#endif
+#ifdef TIMER1
+unsigned int data t1_data;
+bit bdata time_1;
+#endif
+#ifdef TIMER2
+unsigned int data t2_data;
+bit bdata time_2;
+#endif
+#ifdef TIMER3
+unsigned int data t3_data;
+bit bdata time_3;
+#endif
+#ifdef TIMER4
+unsigned int data t4_data;
+bit bdata time_4;
+#endif
+#ifdef TIMER5
+unsigned int data t5_data;
+bit bdata time_5;
+#endif
+#ifdef TIMER6
+unsigned int data t6_data;
+bit bdata time_6;
+#endif
+#ifdef TIMER7
+unsigned int data t7_data;
+bit bdata time_7;
+#endif
+#ifdef TIMER8
+unsigned int data t8_data;
+bit bdata time_8;
+#endif
+#ifdef TIMER9
+unsigned int data t9_data;
+bit bdata time_9;
+#endif
+#ifdef TIMER10
+unsigned int t10_data;
+bit bdata time_10;
+#endif
+#ifdef TIMER11
+unsigned int t11_data;
+bit bdata time_11;
+#endif
+#ifdef TIMER12
+unsigned int t12_data;
+bit bdata time_12;
+#endif
+#ifdef TIMER13
+unsigned int t13_data;
+bit bdata time_13;
+#endif
+
+unsigned int t14_data;
+bit bdata time_14;
+
+
+unsigned int t_continuous_rock_trigger_data;
+bit t_continuous_rock_trigger;
+
+unsigned int t_continuous_rock_interval_data;
+bit t_continuous_rock_interval;
+
+
+#ifdef KEYPAD
+unsigned int data tkeypad_data;
+bit bdata time_keypad;
+#endif
+
+#ifdef LCD
+unsigned int data tlcd_data;
+bit bdata time_lcd;
+#endif
+
+#ifdef PS2
+unsigned int data ps2_0_data;
+bit bdata ps2_time_0;
+unsigned int data ps2_1_data;
+bit bdata ps2_time_1;
+#endif
+
+#ifdef TOGGLE
+unsigned int data t_toggle_data;
+bit bdata time_toggle;
+#endif
+
+#ifdef SHUTTER_CALIBRATE
+unsigned int data t_calibrate_data;
+bit bdata time_calibrate;
+#endif
+
+#ifdef TAPPING
+unsigned int data t_left_data;
+bit bdata time_left;
+unsigned int data t_right_data;
+bit bdata time_right;
+unsigned int data t_click_data;
+bit bdata time_click;
+#endif
+
+#ifdef TEMPORARY
+unsigned int data t_temp_data;
+bit bdata time_temp;
+#endif
+
+//------------------------------------------------------------------------------------
+// Function PROTOTYPES
+//------------------------------------------------------------------------------------
+void Timer0Init(void);
+
+//------------------------------------------------------------------------------------
+// Timer0Init
+//------------------------------------------------------------------------------------
+void Timer0Init(void)
+{
+ 	// Timer0
+	
+	TMOD   	|= 0x01;	// TMOD: timer 0, mode 1, 16-bit manual reload
+	
+	TH0 = 0xf8;			// 1ms timer for 24Mhz crystal
+	TL0 = 0x30;			// 1ms timer for 24Mhz crystal
+					
+	ET0 = 1;			// Enable Timer0 interrupt
+	TR0 = 1;        	// start Timer0
+   	
+	CKCON 	|= 0x00;    // Timer01 uses SYSCLK/12 as time base, 
+}
+
+
+//------------------------------------------------------------------------------------
+// Timer0Isr
+//------------------------------------------------------------------------------------
+// This routine changes the sequence state Timer0 overflows.
+//
+// NOTE: The SFRPAGE register will automatically be switched to the Timer0 Page
+// When an interrupt occurs.  SFRPAGE will return to its previous setting on exit
+// from this routine.
+//
+void Timer0Isr (void) interrupt 1 using 1
+{
+	TR0 = 0;                          
+
+	TH0 = 0xf8;			// 1ms timer for 24Mhz crystal
+	TL0 = 0x30;			// 1ms timer for 24Mhz crystal
+
+  	TR0 = 1;     		// start Timer0
+
+	#ifdef TIMER0
+		if(time_0 == 1)
+		{
+	  		if(t0_data == 0) 
+			{
+				time_0 = 0;
+			}
+			else 
+			{
+				t0_data--;
+		        if(t0_data == 0)
+				{
+					time_0 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER1
+		if(time_1 == 1)
+		{
+	  		if(t1_data == 0)
+			{
+				time_1 = 0;
+			}
+			else 
+			{
+				t1_data--;
+		        if(t1_data == 0)
+				{
+					time_1 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER2
+		if(time_2 == 1)
+		{
+	  		if(t2_data == 0)
+			{
+				time_2 = 0;
+			}
+			else 
+			{
+				t2_data--;
+		        if(t2_data == 0)
+				{
+					time_2 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER3
+		if(time_3 == 1)
+		{
+	  		if(t3_data == 0)
+			{
+				time_3 = 0;
+			}
+			else 
+			{
+				t3_data--;
+		        if(t3_data==0)
+				{
+					time_3=0;
+				}
+			}				
+		}
+
+	#endif
+	#ifdef TIMER4
+		if(time_4 == 1)
+		{
+	  		if(t4_data == 0)
+			{
+				time_4 = 0;
+			}
+			else 
+			{
+				t4_data--;
+		        if(t4_data == 0)
+				{
+					time_4 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER5
+		if(time_5 == 1)
+		{
+	  		if(t5_data == 0)
+			{
+				time_5 = 0;
+			}
+			else 
+			{
+				t5_data--;
+		        if(t5_data == 0)
+				{
+					time_5 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER6
+		if(time_6 == 1)
+		{
+	  		if(t6_data == 0)
+			{
+				time_6 = 0;
+			}
+			else 
+			{
+				t6_data--;
+		        if(t6_data == 0)
+				{
+					time_6 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER7
+		if(time_7 == 1)
+		{
+	  		if(t7_data == 0)
+			{
+				time_7 = 0;
+			}
+			else 
+			{
+				t7_data--;
+		        if(t7_data == 0)
+				{
+					time_7 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER8
+		if(time_8 == 1)
+		{
+	  		if(t8_data == 0)
+			{
+				time_8 = 0;
+			}
+			else 
+			{
+				t8_data--;
+		        if(t8_data == 0)
+				{
+					time_8 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER9
+		if(time_9 == 1)
+		{
+	  		if(t9_data == 0)
+			{
+				time_9 = 0;
+			}
+			else 
+			{
+				t9_data--;
+		        if(t9_data == 0)
+				{
+					time_9 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER10
+		if(time_10 == 1)
+		{
+	  		if(t10_data == 0)
+			{
+				time_10 = 0;
+			}
+			else 
+			{
+				t10_data--;
+		        if(t10_data == 0)
+				{
+					time_10 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER11
+		if(time_11 == 1)
+		{
+	  		if(t11_data == 0)
+			{
+				time_11 = 0;
+			}
+			else 
+			{
+				t11_data--;
+		        if(t11_data == 0)
+				{
+					time_11 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER12
+		if(time_12 == 1)
+		{
+	  		if(t12_data == 0)
+			{
+				time_12 = 0;
+			}
+			else 
+			{
+				t12_data--;
+		        if(t12_data == 0)
+				{
+					time_12 = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef TIMER13
+		if(time_13 == 1)
+		{
+	  		if(t13_data == 0)
+			{
+				time_13 = 0;
+			}
+			else 
+			{
+				t13_data--;
+		        if(t13_data == 0)
+				{
+					time_13 = 0;
+				}
+			}				
+		}
+	#endif
+
+		if(time_14 == 1)
+		{
+	  		if(t14_data == 0)
+			{
+				time_14 = 0;
+			}
+			else 
+			{
+				t14_data--;
+		        if(t14_data == 0)
+				{
+					time_14 = 0;
+				}
+			}				
+		}
+
+
+	#ifdef KEYPAD
+		if(time_keypad == 1)
+		{
+	  		if(tkeypad_data == 0)
+			{
+				time_keypad = 0;
+			}
+			else 
+			{
+				tkeypad_data--;
+		        if(tkeypad_data == 0)
+				{
+					time_keypad = 0;
+				}
+			}				
+		}
+	#endif
+	#ifdef LCD
+		if(time_lcd == 1)
+		{
+	  		if(tlcd_data == 0)
+			{
+				time_lcd = 0;
+			}
+			else 
+			{
+				tlcd_data--;
+		        if(tlcd_data == 0)
+				{
+					time_lcd = 0;
+				}
+			}				
+		}
+	#endif
+
+	#ifdef PS2
+		if(ps2_time_0 == 1)
+		{
+	  		if(ps2_0_data == 0)
+			{
+				ps2_time_0 = 0;
+			}
+			else 
+			{
+				ps2_0_data--;
+		        if(ps2_0_data == 0)
+				{
+					ps2_time_0 = 0;
+				}
+			}				
+		}
+
+		if(ps2_time_1 == 1)
+		{
+	  		if(ps2_1_data == 0)
+			{
+				ps2_time_1 = 0;
+			}
+			else 
+			{
+				ps2_1_data--;
+		        if(ps2_1_data == 0)
+				{
+					ps2_time_1 = 0;
+				}
+			}				
+		}
+	#endif
+
+	#ifdef TOGGLE
+		if(time_toggle == 1)
+		{
+	  		if(t_toggle_data == 0)
+			{
+				time_toggle = 0;
+			}
+			else 
+			{
+				t_toggle_data--;
+		        if(t_toggle_data == 0)
+				{
+					time_toggle = 0;
+				}
+			}				
+		}
+	#endif
+
+	#ifdef SHUTTER_CALIBRATE
+		if(time_calibrate == 1)
+		{
+	  		if(t_calibrate_data == 0)
+			{
+				time_calibrate = 0;
+			}
+			else 
+			{
+				t_calibrate_data--;
+		        if(t_calibrate_data == 0)
+				{
+					time_calibrate = 0;
+				}
+			}				
+		}
+	#endif
+
+	#ifdef TAPPING
+		if(time_left == 1)
+		{
+	  		if(t_left_data == 0)
+			{
+				time_left = 0;
+			}
+			else 
+			{
+				t_left_data--;
+		        if(t_left_data == 0)
+				{
+					time_left = 0;
+				}
+			}				
+		}
+
+		if(time_right == 1)
+		{
+	  		if(t_right_data == 0)
+			{
+				time_right = 0;
+			}
+			else 
+			{
+				t_right_data--;
+		        if(t_right_data == 0)
+				{
+					time_right = 0;
+				}
+			}				
+		}
+
+		if(time_click == 1)
+		{
+	  		if(t_click_data == 0)
+			{
+				time_click = 0;
+			}
+			else 
+			{
+				t_click_data--;
+		        if(t_click_data == 0)
+				{
+					time_click = 0;
+				}
+			}				
+		}
+	#endif
+
+	#ifdef TEMPORARY
+		if(time_temp == 1)
+		{
+	  		if(t_temp_data == 0)
+			{
+				time_temp = 0;
+			}
+			else 
+			{
+				t_temp_data--;
+		        if(t_temp_data == 0)
+				{
+					time_temp = 0;
+				}
+			}				
+		}
+	#endif
+
+		if(t_continuous_rock_trigger == 1)
+		{
+	  		if(t_continuous_rock_trigger_data == 0)
+			{
+				t_continuous_rock_trigger = 0;
+			}
+			else 
+			{
+				t_continuous_rock_trigger_data--;
+		        if(t_continuous_rock_trigger_data == 0)
+				{
+					t_continuous_rock_trigger = 0;
+				}
+			}				
+		}
+
+		if(t_continuous_rock_interval == 1)
+		{
+	  		if(t_continuous_rock_interval_data == 0)
+			{
+				t_continuous_rock_interval = 0;
+			}
+			else 
+			{
+				t_continuous_rock_interval_data--;
+		        if(t_continuous_rock_interval_data == 0)
+				{
+					t_continuous_rock_interval = 0;
+				}
+			}				
+		}
+
+
+}

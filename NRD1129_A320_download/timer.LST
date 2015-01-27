@@ -1,0 +1,757 @@
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 1   
+
+
+C51 COMPILER V7.10, COMPILATION OF MODULE TIMER
+OBJECT MODULE PLACED IN timer.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\c51.exe timer.c DB OE LARGE OT(7,SPEED)
+
+line level    source
+
+   1          //;***************************************************************************
+   2          //;
+   3          //;        Copyright 2007 Avago Technologies Limited
+   4          //;    This code is provided by Avago Technologies as a reference.
+   5          //;     Avago Technologies makes no claims or warranties
+   6          //;    to this firmware's suitability for any application.
+   7          //;    All rights reserved. Patent Pending. 
+   8          //;
+   9          //;*************************************************************************** 
+  10          
+  11          //------------------------------------------------------------------------------------
+  12          // Includes
+  13          //------------------------------------------------------------------------------------
+  14          
+  15          #include <c8051f3xx.h>  // SFR declarations
+  16          
+  17          //------------------------------------------------------------------------------------
+  18          // CONSTANT
+  19          //------------------------------------------------------------------------------------
+  20          #define SYSCLK24000000
+  21          
+  22          #define TIMER0
+  23          #define TIMER1
+  24          #define TIMER3
+  25          #define TIMER4
+  26          #define TIMER5
+  27          #define TIMER6
+  28          #define TIMER7
+  29          #define TIMER11
+  30          #define TIMER13
+  31          
+  32          #define TOGGLE
+  33          #define SHUTTER_CALIBRATE
+  34          #define TAPPING
+  35          #define TEMPORARY
+  36          
+  37          //------------------------------------------------------------------------------------
+  38          // Global VARIABLES
+  39          //------------------------------------------------------------------------------------
+  40          #ifdef TIMER0
+  41          unsigned int data t0_data;
+  42          bit bdata time_0;
+  43          #endif
+  44          #ifdef TIMER1
+  45          unsigned int data t1_data;
+  46          bit bdata time_1;
+  47          #endif
+  48          #ifdef TIMER2
+              unsigned int data t2_data;
+              bit bdata time_2;
+              #endif
+  52          #ifdef TIMER3
+  53          unsigned int data t3_data;
+  54          bit bdata time_3;
+  55          #endif
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 2   
+
+  56          #ifdef TIMER4
+  57          unsigned int data t4_data;
+  58          bit bdata time_4;
+  59          #endif
+  60          #ifdef TIMER5
+  61          unsigned int data t5_data;
+  62          bit bdata time_5;
+  63          #endif
+  64          #ifdef TIMER6
+  65          unsigned int data t6_data;
+  66          bit bdata time_6;
+  67          #endif
+  68          #ifdef TIMER7
+  69          unsigned int data t7_data;
+  70          bit bdata time_7;
+  71          #endif
+  72          #ifdef TIMER8
+              unsigned int data t8_data;
+              bit bdata time_8;
+              #endif
+  76          #ifdef TIMER9
+              unsigned int data t9_data;
+              bit bdata time_9;
+              #endif
+  80          #ifdef TIMER10
+              unsigned int t10_data;
+              bit bdata time_10;
+              #endif
+  84          #ifdef TIMER11
+  85          unsigned int t11_data;
+  86          bit bdata time_11;
+  87          #endif
+  88          #ifdef TIMER12
+              unsigned int t12_data;
+              bit bdata time_12;
+              #endif
+  92          #ifdef TIMER13
+  93          unsigned int t13_data;
+  94          bit bdata time_13;
+  95          #endif
+  96          
+  97          unsigned int t14_data;
+  98          bit bdata time_14;
+  99          
+ 100          unsigned int t15_data;
+ 101          bit bdata time_15;
+ 102          
+ 103          unsigned int t16_data;
+ 104          bit bdata time_16;
+ 105          
+ 106          unsigned int t99_data;
+ 107          bit time_99;
+ 108          
+ 109          
+ 110          unsigned int t_continuous_rock_trigger_data;
+ 111          bit t_continuous_rock_trigger;
+ 112          
+ 113          unsigned int t_continuous_rock_interval_data;
+ 114          bit t_continuous_rock_interval;
+ 115          
+ 116          
+ 117          #ifdef KEYPAD
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 3   
+
+              unsigned int data tkeypad_data;
+              bit bdata time_keypad;
+              #endif
+ 121          
+ 122          #ifdef LCD
+              unsigned int data tlcd_data;
+              bit bdata time_lcd;
+              #endif
+ 126          
+ 127          #ifdef PS2
+              unsigned int data ps2_0_data;
+              bit bdata ps2_time_0;
+              unsigned int data ps2_1_data;
+              bit bdata ps2_time_1;
+              #endif
+ 133          
+ 134          #ifdef TOGGLE
+ 135          unsigned int data t_toggle_data;
+ 136          bit bdata time_toggle;
+ 137          #endif
+ 138          
+ 139          #ifdef SHUTTER_CALIBRATE
+ 140          unsigned int data t_calibrate_data;
+ 141          bit bdata time_calibrate;
+ 142          #endif
+ 143          
+ 144          #ifdef TAPPING
+ 145          unsigned int data t_left_data;
+ 146          bit bdata time_left;
+ 147          unsigned int data t_right_data;
+ 148          bit bdata time_right;
+ 149          unsigned int data t_click_data;
+ 150          bit bdata time_click;
+ 151          #endif
+ 152          
+ 153          #ifdef TEMPORARY
+ 154          unsigned int data t_temp_data;
+ 155          bit bdata time_temp;
+ 156          #endif
+ 157          
+ 158          //------------------------------------------------------------------------------------
+ 159          // Function PROTOTYPES
+ 160          //------------------------------------------------------------------------------------
+ 161          void Timer0Init(void);
+ 162          
+ 163          //------------------------------------------------------------------------------------
+ 164          // Timer0Init
+ 165          //------------------------------------------------------------------------------------
+ 166          void Timer0Init(void)
+ 167          {
+ 168   1              // Timer0
+ 169   1              
+ 170   1              TMOD    |= 0x01;        // TMOD: timer 0, mode 1, 16-bit manual reload
+ 171   1              
+ 172   1              TH0 = 0xf8;                     // 1ms timer for 24Mhz crystal
+ 173   1              TL0 = 0x30;                     // 1ms timer for 24Mhz crystal
+ 174   1                                              
+ 175   1              ET0 = 1;                        // Enable Timer0 interrupt
+ 176   1              TR0 = 1;                // start Timer0
+ 177   1              
+ 178   1              CKCON   |= 0x00;    // Timer01 uses SYSCLK/12 as time base, 
+ 179   1      }
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 4   
+
+ 180          
+ 181          
+ 182          //------------------------------------------------------------------------------------
+ 183          // Timer0Isr
+ 184          //------------------------------------------------------------------------------------
+ 185          // This routine changes the sequence state Timer0 overflows.
+ 186          //
+ 187          // NOTE: The SFRPAGE register will automatically be switched to the Timer0 Page
+ 188          // When an interrupt occurs.  SFRPAGE will return to its previous setting on exit
+ 189          // from this routine.
+ 190          //
+ 191          void Timer0Isr (void) interrupt 1 using 1
+ 192          {
+ 193   1              TR0 = 0;                          
+ 194   1      
+ 195   1              TH0 = 0xf8;                     // 1ms timer for 24Mhz crystal
+ 196   1              TL0 = 0x30;                     // 1ms timer for 24Mhz crystal
+ 197   1      
+ 198   1              TR0 = 1;                // start Timer0
+ 199   1      
+ 200   1              #ifdef TIMER0
+ 201   1                      if(time_0 == 1)
+ 202   1                      {
+ 203   2                              if(t0_data == 0) 
+ 204   2                              {
+ 205   3                                      time_0 = 0;
+ 206   3                              }
+ 207   2                              else 
+ 208   2                              {
+ 209   3                                      t0_data--;
+ 210   3                              if(t0_data == 0)
+ 211   3                                      {
+ 212   4                                              time_0 = 0;
+ 213   4                                      }
+ 214   3                              }                               
+ 215   2                      }
+ 216   1              #endif
+ 217   1              #ifdef TIMER1
+ 218   1                      if(time_1 == 1)
+ 219   1                      {
+ 220   2                              if(t1_data == 0)
+ 221   2                              {
+ 222   3                                      time_1 = 0;
+ 223   3                              }
+ 224   2                              else 
+ 225   2                              {
+ 226   3                                      t1_data--;
+ 227   3                              if(t1_data == 0)
+ 228   3                                      {
+ 229   4                                              time_1 = 0;
+ 230   4                                      }
+ 231   3                              }                               
+ 232   2                      }
+ 233   1              #endif
+ 234   1              #ifdef TIMER2
+                              if(time_2 == 1)
+                              {
+                                      if(t2_data == 0)
+                                      {
+                                              time_2 = 0;
+                                      }
+                                      else 
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 5   
+
+                                      {
+                                              t2_data--;
+                                      if(t2_data == 0)
+                                              {
+                                                      time_2 = 0;
+                                              }
+                                      }                               
+                              }
+                      #endif
+ 251   1              #ifdef TIMER3
+ 252   1                      if(time_3 == 1)
+ 253   1                      {
+ 254   2                              if(t3_data == 0)
+ 255   2                              {
+ 256   3                                      time_3 = 0;
+ 257   3                              }
+ 258   2                              else 
+ 259   2                              {
+ 260   3                                      t3_data--;
+ 261   3                              if(t3_data==0)
+ 262   3                                      {
+ 263   4                                              time_3=0;
+ 264   4                                      }
+ 265   3                              }                               
+ 266   2                      }
+ 267   1      
+ 268   1              #endif
+ 269   1              #ifdef TIMER4
+ 270   1                      if(time_4 == 1)
+ 271   1                      {
+ 272   2                              if(t4_data == 0)
+ 273   2                              {
+ 274   3                                      time_4 = 0;
+ 275   3                              }
+ 276   2                              else 
+ 277   2                              {
+ 278   3                                      t4_data--;
+ 279   3                              if(t4_data == 0)
+ 280   3                                      {
+ 281   4                                              time_4 = 0;
+ 282   4                                      }
+ 283   3                              }                               
+ 284   2                      }
+ 285   1              #endif
+ 286   1              #ifdef TIMER5
+ 287   1                      if(time_5 == 1)
+ 288   1                      {
+ 289   2                              if(t5_data == 0)
+ 290   2                              {
+ 291   3                                      time_5 = 0;
+ 292   3                              }
+ 293   2                              else 
+ 294   2                              {
+ 295   3                                      t5_data--;
+ 296   3                              if(t5_data == 0)
+ 297   3                                      {
+ 298   4                                              time_5 = 0;
+ 299   4                                      }
+ 300   3                              }                               
+ 301   2                      }
+ 302   1              #endif
+ 303   1              #ifdef TIMER6
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 6   
+
+ 304   1                      if(time_6 == 1)
+ 305   1                      {
+ 306   2                              if(t6_data == 0)
+ 307   2                              {
+ 308   3                                      time_6 = 0;
+ 309   3                              }
+ 310   2                              else 
+ 311   2                              {
+ 312   3                                      t6_data--;
+ 313   3                              if(t6_data == 0)
+ 314   3                                      {
+ 315   4                                              time_6 = 0;
+ 316   4                                      }
+ 317   3                              }                               
+ 318   2                      }
+ 319   1              #endif
+ 320   1              #ifdef TIMER7
+ 321   1                      if(time_7 == 1)
+ 322   1                      {
+ 323   2                              if(t7_data == 0)
+ 324   2                              {
+ 325   3                                      time_7 = 0;
+ 326   3                              }
+ 327   2                              else 
+ 328   2                              {
+ 329   3                                      t7_data--;
+ 330   3                              if(t7_data == 0)
+ 331   3                                      {
+ 332   4                                              time_7 = 0;
+ 333   4                                      }
+ 334   3                              }                               
+ 335   2                      }
+ 336   1              #endif
+ 337   1              #ifdef TIMER8
+                              if(time_8 == 1)
+                              {
+                                      if(t8_data == 0)
+                                      {
+                                              time_8 = 0;
+                                      }
+                                      else 
+                                      {
+                                              t8_data--;
+                                      if(t8_data == 0)
+                                              {
+                                                      time_8 = 0;
+                                              }
+                                      }                               
+                              }
+                      #endif
+ 354   1              #ifdef TIMER9
+                              if(time_9 == 1)
+                              {
+                                      if(t9_data == 0)
+                                      {
+                                              time_9 = 0;
+                                      }
+                                      else 
+                                      {
+                                              t9_data--;
+                                      if(t9_data == 0)
+                                              {
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 7   
+
+                                                      time_9 = 0;
+                                              }
+                                      }                               
+                              }
+                      #endif
+ 371   1              #ifdef TIMER10
+                              if(time_10 == 1)
+                              {
+                                      if(t10_data == 0)
+                                      {
+                                              time_10 = 0;
+                                      }
+                                      else 
+                                      {
+                                              t10_data--;
+                                      if(t10_data == 0)
+                                              {
+                                                      time_10 = 0;
+                                              }
+                                      }                               
+                              }
+                      #endif
+ 388   1              #ifdef TIMER11
+ 389   1                      if(time_11 == 1)
+ 390   1                      {
+ 391   2                              if(t11_data == 0)
+ 392   2                              {
+ 393   3                                      time_11 = 0;
+ 394   3                              }
+ 395   2                              else 
+ 396   2                              {
+ 397   3                                      t11_data--;
+ 398   3                              if(t11_data == 0)
+ 399   3                                      {
+ 400   4                                              time_11 = 0;
+ 401   4                                      }
+ 402   3                              }                               
+ 403   2                      }
+ 404   1              #endif
+ 405   1              #ifdef TIMER12
+                              if(time_12 == 1)
+                              {
+                                      if(t12_data == 0)
+                                      {
+                                              time_12 = 0;
+                                      }
+                                      else 
+                                      {
+                                              t12_data--;
+                                      if(t12_data == 0)
+                                              {
+                                                      time_12 = 0;
+                                              }
+                                      }                               
+                              }
+                      #endif
+ 422   1              #ifdef TIMER13
+ 423   1                      if(time_13 == 1)
+ 424   1                      {
+ 425   2                              if(t13_data == 0)
+ 426   2                              {
+ 427   3                                      time_13 = 0;
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 8   
+
+ 428   3                              }
+ 429   2                              else 
+ 430   2                              {
+ 431   3                                      t13_data--;
+ 432   3                              if(t13_data == 0)
+ 433   3                                      {
+ 434   4                                              time_13 = 0;
+ 435   4                                      }
+ 436   3                              }                               
+ 437   2                      }
+ 438   1              #endif
+ 439   1      
+ 440   1                      if(time_14 == 1)
+ 441   1                      {
+ 442   2                              if(t14_data == 0)
+ 443   2                              {
+ 444   3                                      time_14 = 0;
+ 445   3                              }
+ 446   2                              else 
+ 447   2                              {
+ 448   3                                      t14_data--;
+ 449   3                              if(t14_data == 0)
+ 450   3                                      {
+ 451   4                                              time_14 = 0;
+ 452   4                                      }
+ 453   3                              }                               
+ 454   2                      }
+ 455   1      
+ 456   1                      if(time_15 == 1)
+ 457   1                      {
+ 458   2                              if(t15_data == 0)
+ 459   2                              {
+ 460   3                                      time_15 = 0;
+ 461   3                              }
+ 462   2                              else 
+ 463   2                              {
+ 464   3                                      t15_data--;
+ 465   3                              if(t15_data == 0)
+ 466   3                                      {
+ 467   4                                              time_15 = 0;
+ 468   4                                      }
+ 469   3                              }                               
+ 470   2                      }
+ 471   1      
+ 472   1                      if(time_16 == 1)
+ 473   1                      {
+ 474   2                              if(t16_data == 0)
+ 475   2                              {
+ 476   3                                      time_16 = 0;
+ 477   3                              }
+ 478   2                              else 
+ 479   2                              {
+ 480   3                                      t16_data--;
+ 481   3                              if(t16_data == 0)
+ 482   3                                      {
+ 483   4                                              time_16 = 0;
+ 484   4                                      }
+ 485   3                              }                               
+ 486   2                      }
+ 487   1      
+ 488   1                      if(time_99 == 1)
+ 489   1                      {
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 9   
+
+ 490   2                              if(t99_data == 0)
+ 491   2                              {
+ 492   3                                      time_99 = 0;
+ 493   3                              }
+ 494   2                              else 
+ 495   2                              {
+ 496   3                                      t99_data--;
+ 497   3                              if(t99_data == 0)
+ 498   3                                      {
+ 499   4                                              time_99 = 0;
+ 500   4                                      }
+ 501   3                              }                               
+ 502   2                      }
+ 503   1      
+ 504   1      
+ 505   1      
+ 506   1              #ifdef KEYPAD
+                              if(time_keypad == 1)
+                              {
+                                      if(tkeypad_data == 0)
+                                      {
+                                              time_keypad = 0;
+                                      }
+                                      else 
+                                      {
+                                              tkeypad_data--;
+                                      if(tkeypad_data == 0)
+                                              {
+                                                      time_keypad = 0;
+                                              }
+                                      }                               
+                              }
+                      #endif
+ 523   1              #ifdef LCD
+                              if(time_lcd == 1)
+                              {
+                                      if(tlcd_data == 0)
+                                      {
+                                              time_lcd = 0;
+                                      }
+                                      else 
+                                      {
+                                              tlcd_data--;
+                                      if(tlcd_data == 0)
+                                              {
+                                                      time_lcd = 0;
+                                              }
+                                      }                               
+                              }
+                      #endif
+ 540   1      
+ 541   1              #ifdef PS2
+                              if(ps2_time_0 == 1)
+                              {
+                                      if(ps2_0_data == 0)
+                                      {
+                                              ps2_time_0 = 0;
+                                      }
+                                      else 
+                                      {
+                                              ps2_0_data--;
+                                      if(ps2_0_data == 0)
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 10  
+
+                                              {
+                                                      ps2_time_0 = 0;
+                                              }
+                                      }                               
+                              }
+              
+                              if(ps2_time_1 == 1)
+                              {
+                                      if(ps2_1_data == 0)
+                                      {
+                                              ps2_time_1 = 0;
+                                      }
+                                      else 
+                                      {
+                                              ps2_1_data--;
+                                      if(ps2_1_data == 0)
+                                              {
+                                                      ps2_time_1 = 0;
+                                              }
+                                      }                               
+                              }
+                      #endif
+ 574   1      
+ 575   1              #ifdef TOGGLE
+ 576   1                      if(time_toggle == 1)
+ 577   1                      {
+ 578   2                              if(t_toggle_data == 0)
+ 579   2                              {
+ 580   3                                      time_toggle = 0;
+ 581   3                              }
+ 582   2                              else 
+ 583   2                              {
+ 584   3                                      t_toggle_data--;
+ 585   3                              if(t_toggle_data == 0)
+ 586   3                                      {
+ 587   4                                              time_toggle = 0;
+ 588   4                                      }
+ 589   3                              }                               
+ 590   2                      }
+ 591   1              #endif
+ 592   1      
+ 593   1              #ifdef SHUTTER_CALIBRATE
+ 594   1                      if(time_calibrate == 1)
+ 595   1                      {
+ 596   2                              if(t_calibrate_data == 0)
+ 597   2                              {
+ 598   3                                      time_calibrate = 0;
+ 599   3                              }
+ 600   2                              else 
+ 601   2                              {
+ 602   3                                      t_calibrate_data--;
+ 603   3                              if(t_calibrate_data == 0)
+ 604   3                                      {
+ 605   4                                              time_calibrate = 0;
+ 606   4                                      }
+ 607   3                              }                               
+ 608   2                      }
+ 609   1              #endif
+ 610   1      
+ 611   1              #ifdef TAPPING
+ 612   1                      if(time_left == 1)
+ 613   1                      {
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 11  
+
+ 614   2                              if(t_left_data == 0)
+ 615   2                              {
+ 616   3                                      time_left = 0;
+ 617   3                              }
+ 618   2                              else 
+ 619   2                              {
+ 620   3                                      t_left_data--;
+ 621   3                              if(t_left_data == 0)
+ 622   3                                      {
+ 623   4                                              time_left = 0;
+ 624   4                                      }
+ 625   3                              }                               
+ 626   2                      }
+ 627   1      
+ 628   1                      if(time_right == 1)
+ 629   1                      {
+ 630   2                              if(t_right_data == 0)
+ 631   2                              {
+ 632   3                                      time_right = 0;
+ 633   3                              }
+ 634   2                              else 
+ 635   2                              {
+ 636   3                                      t_right_data--;
+ 637   3                              if(t_right_data == 0)
+ 638   3                                      {
+ 639   4                                              time_right = 0;
+ 640   4                                      }
+ 641   3                              }                               
+ 642   2                      }
+ 643   1      
+ 644   1                      if(time_click == 1)
+ 645   1                      {
+ 646   2                              if(t_click_data == 0)
+ 647   2                              {
+ 648   3                                      time_click = 0;
+ 649   3                              }
+ 650   2                              else 
+ 651   2                              {
+ 652   3                                      t_click_data--;
+ 653   3                              if(t_click_data == 0)
+ 654   3                                      {
+ 655   4                                              time_click = 0;
+ 656   4                                      }
+ 657   3                              }                               
+ 658   2                      }
+ 659   1              #endif
+ 660   1      
+ 661   1              #ifdef TEMPORARY
+ 662   1                      if(time_temp == 1)
+ 663   1                      {
+ 664   2                              if(t_temp_data == 0)
+ 665   2                              {
+ 666   3                                      time_temp = 0;
+ 667   3                              }
+ 668   2                              else 
+ 669   2                              {
+ 670   3                                      t_temp_data--;
+ 671   3                              if(t_temp_data == 0)
+ 672   3                                      {
+ 673   4                                              time_temp = 0;
+ 674   4                                      }
+ 675   3                              }                               
+C51 COMPILER V7.10   TIMER                                                                 06/02/1987 18:18:26 PAGE 12  
+
+ 676   2                      }
+ 677   1              #endif
+ 678   1      
+ 679   1                      if(t_continuous_rock_trigger == 1)
+ 680   1                      {
+ 681   2                              if(t_continuous_rock_trigger_data == 0)
+ 682   2                              {
+ 683   3                                      t_continuous_rock_trigger = 0;
+ 684   3                              }
+ 685   2                              else 
+ 686   2                              {
+ 687   3                                      t_continuous_rock_trigger_data--;
+ 688   3                              if(t_continuous_rock_trigger_data == 0)
+ 689   3                                      {
+ 690   4                                              t_continuous_rock_trigger = 0;
+ 691   4                                      }
+ 692   3                              }                               
+ 693   2                      }
+ 694   1      
+ 695   1                      if(t_continuous_rock_interval == 1)
+ 696   1                      {
+ 697   2                              if(t_continuous_rock_interval_data == 0)
+ 698   2                              {
+ 699   3                                      t_continuous_rock_interval = 0;
+ 700   3                              }
+ 701   2                              else 
+ 702   2                              {
+ 703   3                                      t_continuous_rock_interval_data--;
+ 704   3                              if(t_continuous_rock_interval_data == 0)
+ 705   3                                      {
+ 706   4                                              t_continuous_rock_interval = 0;
+ 707   4                                      }
+ 708   3                              }                               
+ 709   2                      }
+ 710   1      
+ 711   1      
+ 712   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    738    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     16    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     26    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =     21    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

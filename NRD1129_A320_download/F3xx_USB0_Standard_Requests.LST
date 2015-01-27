@@ -1,0 +1,801 @@
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 1   
+
+
+C51 COMPILER V7.10, COMPILATION OF MODULE F3XX_USB0_STANDARD_REQUESTS
+OBJECT MODULE PLACED IN F3xx_USB0_Standard_Requests.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\c51.exe F3xx_USB0_Standard_Requests.c DB OE LARGE OT(7,SPEED)
+
+line level    source
+
+   1          //-----------------------------------------------------------------------------
+   2          // F3xx_USB0_Standard_Requests.c
+   3          //-----------------------------------------------------------------------------
+   4          // Copyright 2005 Silicon Laboratories, Inc.
+   5          // http://www.silabs.com
+   6          //
+   7          // Program Description:
+   8          //
+   9          // This source file contains the subroutines used to handle incoming 
+  10          // setup packets. These are called by Handle_Setup in USB_ISR.c and used for 
+  11          // USB chapter 9 compliance.
+  12          //
+  13          
+  14          // How To Test:    See Readme.txt
+  15          //
+  16          //
+  17          // FID:            3XX000040
+  18          // Target:         C8051F32x
+  19          // Tool chain:     Keil C51 7.50 / Keil EVAL C51
+  20          //                 Silicon Laboratories IDE version 2.6
+  21          // Command Line:   See Readme.txt
+  22          // Project Name:   F3xx_MouseExample
+  23          //
+  24          //
+  25          // Release 1.1
+  26          //    -Minor code comment changes
+  27          //    -16 NOV 2006
+  28          // Release 1.0
+  29          //    -Initial Revision (PD)
+  30          //    -07 DEC 2005
+  31          //
+  32          
+  33          //-----------------------------------------------------------------------------
+  34          // Header Files
+  35          //-----------------------------------------------------------------------------
+  36          #include "c8051f3xx.h"
+  37          #include "F3xx_USB0_Register.h"
+  38          #include "F3xx_USB0_InterruptServiceRoutine.h"
+  39          #include "F3xx_USB0_Descriptor.h"
+  40          #include "F3xx_USB0_ReportHandler.h"
+  41          
+  42          
+  43          //-----------------------------------------------------------------------------
+  44          // Variables
+  45          //-----------------------------------------------------------------------------
+  46          // These are created in F3xx_USB0_Descriptor.h
+  47          extern code device_descriptor DEVICEDESC;   
+  48          extern unsigned char* STRINGDESCTABLE[];
+  49          
+  50          // Additional declarations for HID:
+  51          extern code hid_configuration_descriptor        HIDCONFIGDESC;
+  52          extern code hid_report_descriptor                       HIDREPORTDESC;
+  53          
+  54          extern setup_buffer SETUP;             // Buffer for current device request
+  55                                                                                     // information
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 2   
+
+  56          extern unsigned int DATASIZE;
+  57          extern unsigned int DATASENT;
+  58          extern unsigned char* DATAPTR;
+  59          
+  60          extern unsigned char Feature_report_buffer[10];
+  61          extern unsigned char Feature_IN_Report[10];
+  62          extern unsigned char Feature_OUT_Report[10];
+  63          extern data unsigned char IN_PACKET[10];
+  64          extern xdata unsigned char image_buffer[PIXEL_NUMBER + 2];
+  65          
+  66          
+  67          // These are response packets used for
+  68          code unsigned char ONES_PACKET[2] = {0x01, 0x00};
+  69          // communication with host
+  70          code unsigned char ZERO_PACKET[2] = {0x00, 0x00};
+  71          
+  72          extern unsigned char USB0_STATE;       // Determines current usb device state
+  73          
+  74          //-----------------------------------------------------------------------------
+  75          // Definitions
+  76          //-----------------------------------------------------------------------------
+  77          // Redefine existing variable names to refer to the descriptors within the
+  78          // HID configuration descriptor.
+  79          // This minimizes the impact on the existing source code.
+  80          #define ConfigDesc              (HIDCONFIGDESC.hid_configuration_descriptor)
+  81          #define InterfaceDesc   (HIDCONFIGDESC.hid_interface_descriptor)
+  82          #define HidDesc                 (HIDCONFIGDESC.hid_descriptor)
+  83          #define Endpoint1Desc   (HIDCONFIGDESC.hid_endpoint_in_descriptor)
+  84          #define Endpoint2Desc   (HIDCONFIGDESC.hid_endpoint_out_descriptor)
+  85          
+  86          //-----------------------------------------------------------------------------
+  87          // Get_Status
+  88          //-----------------------------------------------------------------------------
+  89          //
+  90          // Return Value - None
+  91          // Parameters - None
+  92          //
+  93          // Standard request that should not change for custom HID designs.
+  94          //
+  95          // ----------------------------------------------------------------------------
+  96          void Get_Status (void)                 // This routine returns a two byte
+  97          {                                      // status packet to the host
+  98   1      
+  99   1         if (SETUP.wValue.c[MSB] || SETUP.wValue.c[LSB] ||
+ 100   1                                             // If non-zero return length or data
+ 101   1                                             // length not
+ 102   1         SETUP.wLength.c[MSB]    || (SETUP.wLength.c[LSB] != 2))
+ 103   1                                             // equal to 2 then send a stall
+ 104   1         {                                   // indicating invalid request
+ 105   2            Force_Stall ();
+ 106   2         }
+ 107   1      
+ 108   1         switch(SETUP.bmRequestType)         // Determine if recipient was device,
+ 109   1         {                                                               // interface, or EP
+ 110   2            case OUT_DEVICE:                 // If recipient was device
+ 111   2               if (SETUP.wIndex.c[MSB] || SETUP.wIndex.c[LSB])
+ 112   2               {
+ 113   3                  Force_Stall ();            // Send stall if request is invalid
+ 114   3               }
+ 115   2               else
+ 116   2               {
+ 117   3                              // Otherwise send 0x00, indicating bus power and no
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 3   
+
+ 118   3                              // remote wake-up supported
+ 119   3                  DATAPTR = (unsigned char*)&ZERO_PACKET;
+ 120   3                  DATASIZE = 2;
+ 121   3               }
+ 122   2               break;
+ 123   2      
+ 124   2            case OUT_INTERFACE:              // See if recipient was interface
+ 125   2               if ((USB0_STATE != DEV_CONFIGURED) ||
+ 126   2               SETUP.wIndex.c[MSB] || SETUP.wIndex.c[LSB])
+ 127   2                                             // Only valid if device is configured
+ 128   2                                             // and non-zero index
+ 129   2               {
+ 130   3                  Force_Stall ();            // Otherwise send stall to host
+ 131   3               }
+ 132   2               else
+ 133   2               {
+ 134   3                              // Status packet always returns 0x00
+ 135   3                  DATAPTR = (unsigned char*)&ZERO_PACKET;
+ 136   3                  DATASIZE = 2;
+ 137   3               }
+ 138   2               break;
+ 139   2      
+ 140   2            case OUT_ENDPOINT:               // See if recipient was an endpoint
+ 141   2               if ((USB0_STATE != DEV_CONFIGURED) ||
+ 142   2               SETUP.wIndex.c[MSB])          // Make sure device is configured
+ 143   2                                                                         // and index msb = 0x00
+ 144   2               {                             // otherwise return stall to host
+ 145   3                  Force_Stall();
+ 146   3               }
+ 147   2               else
+ 148   2               {
+ 149   3                              // Handle case if request is directed to EP 1
+ 150   3                  if (SETUP.wIndex.c[LSB] == IN_EP1)
+ 151   3                  {
+ 152   4                     if (EP_STATUS[1] == EP_HALT)
+ 153   4                     {                       // If endpoint is halted,
+ 154   5                                                                 // return 0x01,0x00
+ 155   5                        DATAPTR = (unsigned char*)&ONES_PACKET;
+ 156   5                        DATASIZE = 2;
+ 157   5                     }
+ 158   4                     else
+ 159   4                     {
+ 160   5                                        // Otherwise return 0x00,0x00 to indicate endpoint active
+ 161   5                        DATAPTR = (unsigned char*)&ZERO_PACKET;
+ 162   5                        DATASIZE = 2;
+ 163   5                     }
+ 164   4                  }
+ 165   3                  else
+ 166   3                  {
+ 167   4                     Force_Stall ();         // Send stall if unexpected data
+ 168   4                                                         // encountered
+ 169   4                  }
+ 170   3               }
+ 171   2               break;
+ 172   2      
+ 173   2            default:
+ 174   2               Force_Stall ();
+ 175   2               break;
+ 176   2         }
+ 177   1         if (EP_STATUS[0] != EP_STALL)
+ 178   1         {
+ 179   2                // Set serviced SETUP Packet, Endpoint 0 in transmit mode, and
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 4   
+
+ 180   2                // reset DATASENT counter
+ 181   2            POLL_WRITE_BYTE (E0CSR, rbSOPRDY);
+ 182   2            EP_STATUS[0] = EP_TX;
+ 183   2            DATASENT = 0;
+ 184   2         }
+ 185   1      }
+ 186          
+ 187          //-----------------------------------------------------------------------------
+ 188          // Clear_Feature
+ 189          //-----------------------------------------------------------------------------
+ 190          //
+ 191          // Return Value - None
+ 192          // Parameters - None
+ 193          //
+ 194          // Standard request that should not change in custom HID designs.
+ 195          //
+ 196          //-----------------------------------------------------------------------------
+ 197          void Clear_Feature ()                  // This routine can clear Halt Endpoint
+ 198          {                                      // features on endpoint 1
+ 199   1      
+ 200   1         // Send procedural stall if device isn't configured
+ 201   1         if ( (USB0_STATE != DEV_CONFIGURED) ||
+ 202   1         // or request is made to host(remote wakeup not supported)
+ 203   1         (SETUP.bmRequestType == IN_DEVICE) ||
+ 204   1         // or request is made to interface
+ 205   1         (SETUP.bmRequestType == IN_INTERFACE) ||
+ 206   1         // or msbs of value or index set to non-zero value
+ 207   1         SETUP.wValue.c[MSB]  || SETUP.wIndex.c[MSB] ||
+ 208   1         // or data length set to non-zero.
+ 209   1         SETUP.wLength.c[MSB] || SETUP.wLength.c[LSB])
+ 210   1         {
+ 211   2            Force_Stall ();
+ 212   2         }
+ 213   1      
+ 214   1         else
+ 215   1         {
+ 216   2                 // Verify that packet was directed at an endpoint
+ 217   2            if ( (SETUP.bmRequestType == IN_ENDPOINT)&&
+ 218   2            // the feature selected was HALT_ENDPOINT
+ 219   2            (SETUP.wValue.c[LSB] == ENDPOINT_HALT)  &&
+ 220   2            // and that the request was directed at EP 1 in
+ 221   2            ((SETUP.wIndex.c[LSB] == IN_EP1) ) )
+ 222   2            {
+ 223   3               if (SETUP.wIndex.c[LSB] == IN_EP1)
+ 224   3               {
+ 225   4                  POLL_WRITE_BYTE (INDEX, 1);// Clear feature endpoint 1 halt
+ 226   4                  POLL_WRITE_BYTE (EINCSR1, rbInCLRDT);
+ 227   4                  EP_STATUS[1] = EP_IDLE;    // Set endpoint 1 status back to idle
+ 228   4               }
+ 229   3            }
+ 230   2            else
+ 231   2            {
+ 232   3               Force_Stall ();               // Send procedural stall
+ 233   3            }
+ 234   2         }
+ 235   1         POLL_WRITE_BYTE (INDEX, 0);         // Reset Index to 0
+ 236   1         if (EP_STATUS[0] != EP_STALL)
+ 237   1         {
+ 238   2            POLL_WRITE_BYTE (E0CSR, (rbSOPRDY | rbDATAEND));
+ 239   2                                                 // Set Serviced Out packet ready and
+ 240   2                                             // data end to indicate transaction
+ 241   2                                             // is over
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 5   
+
+ 242   2         }
+ 243   1      }
+ 244          
+ 245          //-----------------------------------------------------------------------------
+ 246          // Set_Feature
+ 247          //-----------------------------------------------------------------------------
+ 248          //
+ 249          // Return Value - None
+ 250          // Parameters - None
+ 251          //
+ 252          // Standard request that should not change in custom HID designs.
+ 253          //
+ 254          //-----------------------------------------------------------------------------
+ 255          void Set_Feature (void)                // This routine will set the EP Halt
+ 256          {                                      // feature for endpoint 1
+ 257   1      
+ 258   1         // Make sure device is configured, SETUP data
+ 259   1         if ((USB0_STATE != DEV_CONFIGURED) ||
+ 260   1         // is all valid and that request is directed at an endpoint
+ 261   1         (SETUP.bmRequestType == IN_DEVICE) ||
+ 262   1         (SETUP.bmRequestType == IN_INTERFACE) ||
+ 263   1         SETUP.wValue.c[MSB]  || SETUP.wIndex.c[MSB] ||
+ 264   1         SETUP.wLength.c[MSB] || SETUP.wLength.c[LSB])
+ 265   1         {
+ 266   2            Force_Stall ();                  // Otherwise send stall to host
+ 267   2         }
+ 268   1      
+ 269   1         else
+ 270   1         {
+ 271   2                // Make sure endpoint exists and that halt
+ 272   2            if ( (SETUP.bmRequestType == IN_ENDPOINT)&&
+ 273   2            // endpoint feature is selected
+ 274   2            (SETUP.wValue.c[LSB] == ENDPOINT_HALT) &&
+ 275   2            ((SETUP.wIndex.c[LSB] == IN_EP1)        ||
+ 276   2            (SETUP.wIndex.c[LSB] == OUT_EP2) ) )
+ 277   2            {
+ 278   3               if (SETUP.wIndex.c[LSB] == IN_EP1)
+ 279   3               {
+ 280   4                  POLL_WRITE_BYTE (INDEX, 1);// Set feature endpoint 1 halt
+ 281   4                  POLL_WRITE_BYTE (EINCSR1, rbInSDSTL);
+ 282   4                  EP_STATUS[1] = EP_HALT;
+ 283   4               }
+ 284   3            }
+ 285   2            else
+ 286   2            {
+ 287   3               Force_Stall ();               // Send procedural stall
+ 288   3            }
+ 289   2         }
+ 290   1         POLL_WRITE_BYTE (INDEX, 0);
+ 291   1         if (EP_STATUS[0] != EP_STALL)
+ 292   1         {
+ 293   2            POLL_WRITE_BYTE (E0CSR, (rbSOPRDY | rbDATAEND));
+ 294   2                                             // Indicate SETUP packet has been
+ 295   2                                             // serviced
+ 296   2         }
+ 297   1      }
+ 298          
+ 299          //-----------------------------------------------------------------------------
+ 300          // Set_Address
+ 301          //-----------------------------------------------------------------------------
+ 302          //
+ 303          // Return Value - None
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 6   
+
+ 304          // Parameters - None
+ 305          //
+ 306          // Standard request that should not change in custom HID designs.
+ 307          //
+ 308          //-----------------------------------------------------------------------------
+ 309          void Set_Address (void)                // Set new function address
+ 310          {
+ 311   1         // Request must be directed to device
+ 312   1         if ((SETUP.bmRequestType != IN_DEVICE) ||
+ 313   1         // with index and length set to zero.
+ 314   1         SETUP.wIndex.c[MSB]  || SETUP.wIndex.c[LSB]||
+ 315   1         SETUP.wLength.c[MSB] || SETUP.wLength.c[LSB]||
+ 316   1         SETUP.wValue.c[MSB]  || (SETUP.wValue.c[LSB] & 0x80))
+ 317   1         {
+ 318   2           Force_Stall ();                   // Send stall if SETUP data invalid
+ 319   2         }
+ 320   1      
+ 321   1         EP_STATUS[0] = EP_ADDRESS;          // Set endpoint zero to update
+ 322   1                                                                                 // address next status phase
+ 323   1         if (SETUP.wValue.c[LSB] != 0)
+ 324   1         {
+ 325   2            USB0_STATE = DEV_ADDRESS;        // Indicate that device state is now
+ 326   2                                                                         // address
+ 327   2         }
+ 328   1         else
+ 329   1         {
+ 330   2            USB0_STATE = DEV_DEFAULT;        // If new address was 0x00, return
+ 331   2         }                                   // device to default state
+ 332   1         if (EP_STATUS[0] != EP_STALL)
+ 333   1         {
+ 334   2            POLL_WRITE_BYTE (E0CSR, (rbSOPRDY | rbDATAEND));
+ 335   2                                             // Indicate SETUP packet has
+ 336   2                                             // been serviced
+ 337   2         }
+ 338   1      }
+ 339          
+ 340          //-----------------------------------------------------------------------------
+ 341          // Get_Descriptor
+ 342          //-----------------------------------------------------------------------------
+ 343          //
+ 344          // Return Value - None
+ 345          // Parameters - None
+ 346          //
+ 347          // Standard request that should not change in custom HID designs.
+ 348          //
+ 349          //-----------------------------------------------------------------------------
+ 350          void Get_Descriptor (void)             // This routine sets the data pointer
+ 351          {                                      // and size to correct descriptor and
+ 352   1                                             // sets the endpoint status to transmit
+ 353   1      
+ 354   1         switch(SETUP.wValue.c[MSB])         // Determine which type of descriptor
+ 355   1         {                                   // was requested, and set data ptr and
+ 356   2            case DSC_DEVICE:                 // size accordingly
+ 357   2               DATAPTR = (unsigned char*) &DEVICEDESC;
+ 358   2               DATASIZE = DEVICEDESC.bLength;
+ 359   2               break;
+ 360   2      
+ 361   2            case DSC_CONFIG:
+ 362   2               DATAPTR = (unsigned char*) &ConfigDesc;
+ 363   2                                             // Compiler Specific - The next statement
+ 364   2                                             // reverses the bytes in the configuration
+ 365   2                                             // descriptor for the compiler
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 7   
+
+ 366   2               DATASIZE = ConfigDesc.wTotalLength.c[MSB] +
+ 367   2                          256*ConfigDesc.wTotalLength.c[LSB];
+ 368   2               break;
+ 369   2      
+ 370   2                case DSC_STRING:
+ 371   2               DATAPTR = STRINGDESCTABLE[SETUP.wValue.c[LSB]];
+ 372   2                                                     // Can have a maximum of 255 strings
+ 373   2               DATASIZE = *DATAPTR;
+ 374   2               break;
+ 375   2      
+ 376   2            case DSC_INTERFACE:
+ 377   2               DATAPTR = (unsigned char*) &InterfaceDesc;
+ 378   2               DATASIZE = InterfaceDesc.bLength;
+ 379   2               break;
+ 380   2      
+ 381   2            case DSC_ENDPOINT:
+ 382   2               if ( (SETUP.wValue.c[LSB] == IN_EP1) )
+ 383   2               {
+ 384   3                  if (SETUP.wValue.c[LSB] == IN_EP1)
+ 385   3                  {
+ 386   4                     DATAPTR = (unsigned char*) &Endpoint1Desc;
+ 387   4                     DATASIZE = Endpoint1Desc.bLength;
+ 388   4                  }
+ 389   3                  else
+ 390   3                  {
+ 391   4                     DATAPTR = (unsigned char*) &Endpoint2Desc;
+ 392   4                     DATASIZE = Endpoint2Desc.bLength;
+ 393   4                  }
+ 394   3               }
+ 395   2               else
+ 396   2               {
+ 397   3                  Force_Stall();
+ 398   3               }
+ 399   2               break;
+ 400   2      
+ 401   2              case DSC_HID: // HID Specific (HID class descriptor)
+ 402   2                      DATAPTR = (unsigned char*)&HidDesc;
+ 403   2                      DATASIZE = HidDesc.bLength;
+ 404   2                      break;
+ 405   2      
+ 406   2              case DSC_HID_REPORT: // HID Specific (HID report descriptor)
+ 407   2                      DATAPTR = (unsigned char*)&HIDREPORTDESC;
+ 408   2                      DATASIZE = HID_REPORT_DESCRIPTOR_SIZE;
+ 409   2                      break;
+ 410   2      
+ 411   2            default:
+ 412   2               Force_Stall ();               // Send Stall if unsupported request
+ 413   2               break;
+ 414   2         }
+ 415   1      
+ 416   1         // Verify that the requested descriptor is valid
+ 417   1         if (SETUP.wValue.c[MSB] == DSC_DEVICE ||
+ 418   1         SETUP.wValue.c[MSB] == DSC_CONFIG     ||
+ 419   1         SETUP.wValue.c[MSB] == DSC_STRING     ||
+ 420   1         SETUP.wValue.c[MSB] == DSC_INTERFACE  ||
+ 421   1         SETUP.wValue.c[MSB] == DSC_ENDPOINT)
+ 422   1         {
+ 423   2            if ((SETUP.wLength.c[LSB] < DATASIZE) &&
+ 424   2            (SETUP.wLength.c[MSB] == 0))
+ 425   2            {
+ 426   3               DATASIZE = SETUP.wLength.i;   // Send only requested amount of data
+ 427   3            }
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 8   
+
+ 428   2         }
+ 429   1         if (EP_STATUS[0] != EP_STALL)       // Make sure endpoint not in stall mode
+ 430   1         {
+ 431   2           POLL_WRITE_BYTE (E0CSR, rbSOPRDY);// Service SETUP Packet
+ 432   2           EP_STATUS[0] = EP_TX;             // Put endpoint in transmit mode
+ 433   2           DATASENT = 0;                     // Reset Data Sent counter
+ 434   2         }
+ 435   1      }
+ 436          
+ 437          //-----------------------------------------------------------------------------
+ 438          // Get_Configuration
+ 439          //-----------------------------------------------------------------------------
+ 440          //
+ 441          // Return Value - None
+ 442          // Parameters - None
+ 443          //
+ 444          // Standard request that should not change in custom HID designs.
+ 445          //
+ 446          //-----------------------------------------------------------------------------
+ 447          void Get_Configuration (void)          // This routine returns current
+ 448          {                                                                          // configuration value
+ 449   1         // This request must be directed to the device
+ 450   1         if ( (SETUP.bmRequestType != OUT_DEVICE)    ||
+ 451   1         // with value word set to zero
+ 452   1         SETUP.wValue.c[MSB]  || SETUP.wValue.c[LSB]||
+ 453   1         // and index set to zero
+ 454   1         SETUP.wIndex.c[MSB]  || SETUP.wIndex.c[LSB]||
+ 455   1         // and SETUP length set to one
+ 456   1         SETUP.wLength.c[MSB] || (SETUP.wLength.c[LSB] != 1) )
+ 457   1         {
+ 458   2            Force_Stall ();                  // Otherwise send a stall to host
+ 459   2         }
+ 460   1      
+ 461   1         else
+ 462   1         {
+ 463   2            if (USB0_STATE == DEV_CONFIGURED)// If the device is configured, then
+ 464   2            {                                // return value 0x01 since this software
+ 465   3                                                                         // only supports one configuration
+ 466   3               DATAPTR = (unsigned char*)&ONES_PACKET;
+ 467   3               DATASIZE = 1;
+ 468   3            }
+ 469   2            if (USB0_STATE == DEV_ADDRESS)   // If the device is in address state, it
+ 470   2            {                                // is not configured, so return 0x00
+ 471   3               DATAPTR = (unsigned char*)&ZERO_PACKET;
+ 472   3               DATASIZE = 1;
+ 473   3            }
+ 474   2         }
+ 475   1         if (EP_STATUS[0] != EP_STALL)
+ 476   1         {
+ 477   2                // Set Serviced Out Packet bit
+ 478   2            POLL_WRITE_BYTE (E0CSR, rbSOPRDY);
+ 479   2            EP_STATUS[0] = EP_TX;            // Put endpoint into transmit mode
+ 480   2            DATASENT = 0;                    // Reset Data Sent counter to zero
+ 481   2         }
+ 482   1      }
+ 483          
+ 484          //-----------------------------------------------------------------------------
+ 485          // Set_Configuration
+ 486          //-----------------------------------------------------------------------------
+ 487          //
+ 488          // Return Value - None
+ 489          // Parameters - None
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 9   
+
+ 490          //
+ 491          // Standard request that should not change in custom HID designs.
+ 492          //
+ 493          //-----------------------------------------------------------------------------
+ 494          void Set_Configuration (void)          // This routine allows host to change
+ 495          {                                      // current device configuration value
+ 496   1      
+ 497   1         // Device must be addressed before configured
+ 498   1         if ((USB0_STATE == DEV_DEFAULT) ||
+ 499   1         // and request recipient must be the device
+ 500   1         (SETUP.bmRequestType != IN_DEVICE) ||
+ 501   1         // the index and length words must be zero
+ 502   1         SETUP.wIndex.c[MSB]  || SETUP.wIndex.c[LSB]||
+ 503   1         SETUP.wLength.c[MSB] || SETUP.wLength.c[LSB] ||
+ 504   1         SETUP.wValue.c[MSB]  || (SETUP.wValue.c[LSB] > 1))
+ 505   1         // This software only supports config = 0,1
+ 506   1         {
+ 507   2            Force_Stall ();                  // Send stall if SETUP data is invalid
+ 508   2         }
+ 509   1      
+ 510   1         else
+ 511   1         {
+ 512   2            if (SETUP.wValue.c[LSB] > 0)     // Any positive configuration request
+ 513   2            {                                // results in configuration being set
+ 514   3                                                                         // to 1
+ 515   3               USB0_STATE = DEV_CONFIGURED;
+ 516   3               EP_STATUS[1] = EP_IDLE;       // Set endpoint status to idle (enabled)
+ 517   3      
+ 518   3               POLL_WRITE_BYTE (INDEX, 1);   // Change index to endpoint 1
+ 519   3               // Set DIRSEL to indicate endpoint 1 is IN/OUT
+ 520   3               POLL_WRITE_BYTE (EINCSR2, rbInSPLIT);
+ 521   3               POLL_WRITE_BYTE (INDEX, 0);   // Set index back to endpoint 0
+ 522   3      
+ 523   3               Handle_In1();
+ 524   3            }
+ 525   2            else
+ 526   2            {
+ 527   3               USB0_STATE = DEV_ADDRESS;     // Unconfigures device by setting state
+ 528   3               EP_STATUS[1] = EP_HALT;       // to address, and changing endpoint
+ 529   3                                             // 1 and 2
+ 530   3            }
+ 531   2         }
+ 532   1         if (EP_STATUS[0] != EP_STALL)
+ 533   1         {
+ 534   2            POLL_WRITE_BYTE (E0CSR, (rbSOPRDY | rbDATAEND));
+ 535   2                                             // Indicate SETUP packet has been
+ 536   2                                             // serviced
+ 537   2         }
+ 538   1      }
+ 539          
+ 540          //-----------------------------------------------------------------------------
+ 541          // Get_Interface
+ 542          //-----------------------------------------------------------------------------
+ 543          //
+ 544          // Return Value - None
+ 545          // Parameters - Non
+ 546          //
+ 547          // Standard request that should not change in custom HID designs.
+ 548          //
+ 549          //-----------------------------------------------------------------------------
+ 550          void Get_Interface (void)              // This routine returns 0x00, since
+ 551          {                                      // only one interface is supported by
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 10  
+
+ 552   1                                                 // this firmware
+ 553   1      
+ 554   1         // If device is not configured
+ 555   1         if ((USB0_STATE != DEV_CONFIGURED) ||
+ 556   1         // or recipient is not an interface
+ 557   1         (SETUP.bmRequestType != OUT_INTERFACE) ||
+ 558   1         // or non-zero value or index fields
+ 559   1         SETUP.wValue.c[MSB]  ||SETUP.wValue.c[LSB] ||
+ 560   1         // or data length not equal to one
+ 561   1         SETUP.wIndex.c[MSB]  ||SETUP.wIndex.c[LSB] ||
+ 562   1         SETUP.wLength.c[MSB] ||(SETUP.wLength.c[LSB] != 1))
+ 563   1         {
+ 564   2            Force_Stall ();                  // Then return stall due to invalid
+ 565   2                                                                         // request
+ 566   2         }
+ 567   1      
+ 568   1         else
+ 569   1         {
+ 570   2                // Otherwise, return 0x00 to host
+ 571   2            DATAPTR = (unsigned char*)&ZERO_PACKET;
+ 572   2            DATASIZE = 1;
+ 573   2         }
+ 574   1         if (EP_STATUS[0] != EP_STALL)
+ 575   1         {
+ 576   2                // Set Serviced SETUP packet, put endpoint in transmit mode and reset
+ 577   2                // Data sent counter
+ 578   2            POLL_WRITE_BYTE (E0CSR, rbSOPRDY);
+ 579   2            EP_STATUS[0] = EP_TX;
+ 580   2            DATASENT = 0;
+ 581   2         }
+ 582   1      }
+ 583          
+ 584          //-----------------------------------------------------------------------------
+ 585          // Set_Interface
+ 586          //-----------------------------------------------------------------------------
+ 587          //
+ 588          // Return Value - None
+ 589          // Parameters - None
+ 590          //
+ 591          // Standard request that should not change in custom HID designs.
+ 592          //
+ 593          //-----------------------------------------------------------------------------
+ 594          void Set_Interface (void)
+ 595          {
+ 596   1         // Make sure request is directed at interface
+ 597   1         if ((SETUP.bmRequestType != IN_INTERFACE)  ||
+ 598   1         // and all other packet values are set to zero
+ 599   1         SETUP.wLength.c[MSB] ||SETUP.wLength.c[LSB]||
+ 600   1         SETUP.wValue.c[MSB]  ||SETUP.wValue.c[LSB] ||
+ 601   1         SETUP.wIndex.c[MSB]  ||SETUP.wIndex.c[LSB])
+ 602   1         {
+ 603   2            Force_Stall ();                  // Othewise send a stall to host
+ 604   2         }
+ 605   1         if (EP_STATUS[0] != EP_STALL)
+ 606   1         {
+ 607   2            POLL_WRITE_BYTE (E0CSR, (rbSOPRDY | rbDATAEND));
+ 608   2                                             // Indicate SETUP packet has been
+ 609   2                                             // serviced
+ 610   2         }
+ 611   1      }
+ 612          
+ 613          //-----------------------------------------------------------------------------
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 11  
+
+ 614          // Get_Idle
+ 615          //-----------------------------------------------------------------------------
+ 616          // Not supported.
+ 617          //
+ 618          //-----------------------------------------------------------------------------
+ 619          void Get_Idle(void) {
+ 620   1      }
+ 621          
+ 622          //-----------------------------------------------------------------------------
+ 623          
+ 624          //-----------------------------------------------------------------------------
+ 625          // Get_Protocol
+ 626          //-----------------------------------------------------------------------------
+ 627          // Not supported.
+ 628          //
+ 629          //-----------------------------------------------------------------------------
+ 630          void Get_Protocol(void) { }
+ 631          
+ 632          //-----------------------------------------------------------------------------
+ 633          // Set_Protocol
+ 634          //-----------------------------------------------------------------------------
+ 635          // Not supported.
+ 636          //
+ 637          //-----------------------------------------------------------------------------
+ 638          void Set_Protocol (void) { }
+ 639          
+ 640          
+ 641          
+ 642          //-----------------------------------------------------------------------------
+ 643          // Set_Idle()
+ 644          //-----------------------------------------------------------------------------
+ 645          //
+ 646          // Return Value - None
+ 647          // Parameters - None
+ 648          //
+ 649          // Description: Sets the idle feature on interrupt in endpoint.
+ 650          //-----------------------------------------------------------------------------
+ 651          void Set_Idle (void)
+ 652          {
+ 653   1      
+ 654   1         if (EP_STATUS[0] != EP_STALL)
+ 655   1         {
+ 656   2            // Set serviced SETUP Packet
+ 657   2            POLL_WRITE_BYTE (E0CSR, (rbSOPRDY | rbDATAEND));
+ 658   2         }
+ 659   1      
+ 660   1      }
+ 661          
+ 662          
+ 663          
+ 664          //-----------------------------------------------------------------------------
+ 665          // Get_Report()
+ 666          //-----------------------------------------------------------------------------
+ 667          //
+ 668          // Return Value - None
+ 669          // Parameters - None
+ 670          //
+ 671          // Description: Sends a given report type to the host.
+ 672          //
+ 673          //-----------------------------------------------------------------------------
+ 674          void Get_Report (void)
+ 675          {
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 12  
+
+ 676   1              unsigned int temp1, temp2;
+ 677   1      
+ 678   1          bit handled = 0;  
+ 679   1              bit nack = 0;  
+ 680   1              if(SETUP.wValue.c[ MSB ] == HID_FEATURE)        // Get_Report(Feature)
+ 681   1              {
+ 682   2                      temp1 = SETUP.wValue.c[LSB];
+ 683   2                      temp2 = SETUP.wLength.i ;
+ 684   2      
+ 685   2                      if((SETUP.wValue.c[LSB] == 1)                   // report ID     
+ 686   2                      && (SETUP.wLength.i == 4))                              // length
+ 687   2                      {
+ 688   3                              DATASIZE = 4;
+ 689   3                              DATAPTR  = Feature_report_buffer;
+ 690   3                              handled  = 1;
+ 691   3                      }
+ 692   2                      else 
+ 693   2                      if((SETUP.wValue.c[LSB] == 2)                   // report ID     
+ 694   2                      && (SETUP.wLength.i == (PIXEL_NUMBER + 2)))
+ 695   2                      {
+ 696   3                              DATASIZE = SETUP.wLength.i;
+ 697   3                              DATAPTR  = image_buffer;
+ 698   3                              handled  = 1;
+ 699   3                      }
+ 700   2              }
+ 701   1              else  
+ 702   1              if((SETUP.wValue.c[ MSB ] == 0)      // Get_Report( Input )        
+ 703   1              && (SETUP.wLength.i       == 9))
+ 704   1              {            
+ 705   2                      DATASIZE = 9;
+ 706   2                      DATAPTR  = IN_PACKET;
+ 707   2                      handled  = 1;
+ 708   2              }    
+ 709   1              if ( handled )    
+ 710   1              {        
+ 711   2              // Set serviced SETUP Packet  
+ 712   2                      POLL_WRITE_BYTE (E0CSR, rbSOPRDY);
+ 713   2                      EP_STATUS[0] = EP_TX;                   // Endpoint 0 in transmit mode
+ 714   2                      DATASENT = 0;                           // Reset DATASENT counter    
+ 715   2              }
+ 716   1              else 
+ 717   1              {        
+ 718   2                      Force_Stall ();                         // Send procedural stall
+ 719   2              }
+ 720   1      }
+ 721          
+ 722          
+ 723          
+ 724          //-----------------------------------------------------------------------------
+ 725          // Set_Report()
+ 726          //-----------------------------------------------------------------------------
+ 727          //
+ 728          // Return Value - None
+ 729          // Parameters - None
+ 730          //
+ 731          // Description: Receives a report sent from the host.
+ 732          //
+ 733          //-----------------------------------------------------------------------------
+ 734          void Set_Report (void)
+ 735          {
+ 736   1              if (   (SETUP.wValue.c[MSB] == HID_FEATURE )        // Set_Report( Feature )     
+ 737   1                  && (SETUP.wValue.c[LSB] == 1)                   // default report ID     
+C51 COMPILER V7.10   F3XX_USB0_STANDARD_REQUESTS                                           06/02/1987 18:18:25 PAGE 13  
+
+ 738   1                      && (SETUP.wIndex.i      == 0)                   // Interface 0    
+ 739   1                      && (SETUP.wLength.i     == 4 ) ) // report size    
+ 740   1              {        
+ 741   2                      DATASIZE = 4;
+ 742   2                      DATAPTR  = Feature_report_buffer;        // Set serviced SETUP Packet        
+ 743   2                      POLL_WRITE_BYTE (E0CSR, rbSOPRDY);        
+ 744   2                      EP_STATUS[0] = EP_RX;                   // Endpoint 0 in transmit mode
+ 745   2                      DATASENT = 0;                           // Reset DATASENT counter
+ 746   2          } 
+ 747   1              else 
+ 748   1              {        
+ 749   2                      Force_Stall ();                         // Send procedural stall    
+ 750   2              }
+ 751   1      }
+ 752          
+ 753          
+ 754          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1800    ----
+   CONSTANT SIZE    =      4    ----
+   XDATA SIZE       =   ----       4
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----       2
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

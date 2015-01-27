@@ -1,0 +1,238 @@
+C51 COMPILER V7.10   F3XX_USB0_MOUSE                                                       06/02/1987 18:18:25 PAGE 1   
+
+
+C51 COMPILER V7.10, COMPILATION OF MODULE F3XX_USB0_MOUSE
+OBJECT MODULE PLACED IN F3xx_USB0_Mouse.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\c51.exe F3xx_USB0_Mouse.c DB OE LARGE OT(7,SPEED)
+
+line level    source
+
+   1          //-----------------------------------------------------------------------------
+   2          // F340_USB0_Mouse.c
+   3          //-----------------------------------------------------------------------------
+   4          // Copyright 2005 Silicon Laboratories, Inc.
+   5          // http://www.silabs.com
+   6          //
+   7          // Program Description:
+   8          //
+   9          // Source file for routines that mouse data.
+  10          //
+  11          //
+  12          // How To Test:    See Readme.txt
+  13          //
+  14          //
+  15          // FID:            3XX000041
+  16          // Target:         C8051F320
+  17          // Tool chain:     Keil C51 7.50 / Keil EVAL C51
+  18          //                 Silicon Laboratories IDE version 2.6
+  19          // Command Line:   See Readme.txt
+  20          // Project Name:   F3xx_MouseExample
+  21          //
+  22          // Release 1.0
+  23          //    -Initial Revision (PD)
+  24          //    -07 DEC 2005
+  25          //
+  26          
+  27          
+  28          #include "c8051f3xx.h"
+  29          #include "F3xx_USB0_Mouse.h"
+  30          #include "F3xx_USB0_InterruptServiceRoutine.h"
+  31          #include "F3xx_USB0_Register.h"
+  32          
+  33          
+  34          //-----------------------------------------------------------------------------
+  35          // Definitions
+  36          //-----------------------------------------------------------------------------
+  37          
+  38          #define SYSCLK             12000000    // SYSCLK frequency in Hz
+  39          
+  40          // USB clock selections (SFR CLKSEL)
+  41          #define USB_4X_CLOCK       0x00        // Select 4x clock multiplier, for USB
+  42          #define USB_INT_OSC_DIV_2  0x10        // Full Speed
+  43          #define USB_EXT_OSC        0x20
+  44          #define USB_EXT_OSC_DIV_2  0x30
+  45          #define USB_EXT_OSC_DIV_3  0x40
+  46          #define USB_EXT_OSC_DIV_4  0x50
+  47          
+  48          // System clock selections (SFR CLKSEL)
+  49          #define SYS_INT_OSC        0x00        // Select to use internal oscillator
+  50          #define SYS_EXT_OSC        0x01        // Select to use an external oscillator
+  51          #define SYS_4X_DIV_2       0x02
+  52          
+  53          //-----------------------------------------------------------------------------
+  54          // 16-bit SFR Definitions for 'F32x
+  55          //-----------------------------------------------------------------------------
+C51 COMPILER V7.10   F3XX_USB0_MOUSE                                                       06/02/1987 18:18:25 PAGE 2   
+
+  56          
+  57          //-----------------------------------------------------------------------------
+  58          // Local Definitions
+  59          //-----------------------------------------------------------------------------
+  60          
+  61          //-----------------------------------------------------------------------------
+  62          // Global Variable Declarations
+  63          //-----------------------------------------------------------------------------
+  64          
+  65          data unsigned char IN_PACKET[10];
+  66          
+  67          //-----------------------------------------------------------------------------
+  68          // Local Variable Declarations
+  69          //-----------------------------------------------------------------------------
+  70          
+  71          
+  72          //-----------------------------------------------------------------------------
+  73          // Local Function Prototypes
+  74          //-----------------------------------------------------------------------------
+  75          
+  76          void Sysclk_Init (void);
+  77          void Port_Init (void);
+  78          void USB0_Init (void);
+  79          void Delay (void);
+  80          
+  81          //-----------------------------------------------------------------------------
+  82          // Interrupt Service Routines
+  83          //-----------------------------------------------------------------------------
+  84          
+  85          //-----------------------------------------------------------------------------
+  86          // Initialization Routines
+  87          //-----------------------------------------------------------------------------
+  88          
+  89          //-----------------------------------------------------------------------------
+  90          // System_Init(void)
+  91          //-----------------------------------------------------------------------------
+  92          //
+  93          // Return Value - None
+  94          // Parameters - None
+  95          //
+  96          // This top-level initialization routine calls all support routine.
+  97          //
+  98          // ----------------------------------------------------------------------------
+  99          void System_Init (void)
+ 100          {
+ 101   1         PCA0MD &= ~0x40;                    // Disable Watchdog timer
+ 102   1         PCA0MD  = 0x00;
+ 103   1         Sysclk_Init ();                     // initialize system clock
+ 104   1         Port_Init ();                           // configure cross bar
+ 105   1      }
+ 106          
+ 107          //-----------------------------------------------------------------------------
+ 108          // USB0_Init
+ 109          //-----------------------------------------------------------------------------
+ 110          //
+ 111          // Return Value - None
+ 112          // Parameters - None
+ 113          //
+ 114          // - Initialize USB0
+ 115          // - Enable USB0 interrupts
+ 116          // - Enable USB0 transceiver
+ 117          // - Enable USB0 with suspend detection
+C51 COMPILER V7.10   F3XX_USB0_MOUSE                                                       06/02/1987 18:18:25 PAGE 3   
+
+ 118          //
+ 119          // ----------------------------------------------------------------------------
+ 120          
+ 121          void USB0_Init (void)
+ 122          {
+ 123   1      
+ 124   1         POLL_WRITE_BYTE (POWER, 0x08);      // Force Asynchronous USB Reset
+ 125   1         POLL_WRITE_BYTE (IN1IE, 0x07);      // Enable Endpoint 0-1 in interrupts
+ 126   1         POLL_WRITE_BYTE (OUT1IE,0x07);      // Enable Endpoint 0-1 out interrupts
+ 127   1         POLL_WRITE_BYTE (CMIE, 0x07);       // Enable Reset, Resume, and Suspend
+ 128   1                                             // interrupts
+ 129   1         USB0XCN = 0xE0;                     // Enable transceiver; select full speed
+ 130   1         POLL_WRITE_BYTE (CLKREC,0x80);      // Enable clock recovery, single-step
+ 131   1                                             // mode disabled
+ 132   1      
+ 133   1         EIE1 |= 0x02;                       // Enable USB0 Interrupts
+ 134   1      
+ 135   1                                             // Enable USB0 by clearing the USB
+ 136   1         POLL_WRITE_BYTE (POWER, 0x01);      // Inhibit Bit and enable suspend
+ 137   1                                             // detection
+ 138   1      
+ 139   1      }
+ 140          
+ 141          
+ 142          //-----------------------------------------------------------------------------
+ 143          // Sysclk_Init
+ 144          //-----------------------------------------------------------------------------
+ 145          //
+ 146          // Return Value - None
+ 147          // Parameters - None
+ 148          //
+ 149          // Initialize system clock to maximum frequency.
+ 150          //
+ 151          // ----------------------------------------------------------------------------
+ 152          void Sysclk_Init (void)
+ 153          {
+ 154   1              //24MHz
+ 155   1          int i = 0;
+ 156   1          CLKMUL    = 0x80;
+ 157   1          for (i = 0; i < 20; i++);    // Wait 5us for initialization
+ 158   1          CLKMUL    |= 0xC0;
+ 159   1          while ((CLKMUL & 0x20) == 0);
+ 160   1          CLKSEL    = 0x02;
+ 161   1          OSCICN    = 0x83;
+ 162   1      
+ 163   1      }
+ 164          
+ 165          //-----------------------------------------------------------------------------
+ 166          // Port_Init
+ 167          //-----------------------------------------------------------------------------
+ 168          //
+ 169          // Return Value - None
+ 170          // Parameters - None
+ 171          //
+ 172          // - Configure the Crossbar and GPIO ports.
+ 173          //
+ 174          // ----------------------------------------------------------------------------
+ 175          void Port_Init()
+ 176          {
+ 177   1          // P0.0  -  Skipped,     Open-Drain, Digital
+ 178   1          // P0.1  -  Skipped,     Open-Drain, Digital
+ 179   1          // P0.2  -  Skipped,     Open-Drain, Digital
+C51 COMPILER V7.10   F3XX_USB0_MOUSE                                                       06/02/1987 18:18:25 PAGE 4   
+
+ 180   1          // P0.3  -  Skipped,     Open-Drain, Digital
+ 181   1          // P0.4  -  Skipped,     Open-Drain, Digital
+ 182   1          // P0.5  -  Skipped,     Open-Drain, Digital
+ 183   1          // P0.6  -  SDA (SMBus), Open-Drain, Digital
+ 184   1          // P0.7  -  SCL (SMBus), Open-Drain, Digital
+ 185   1      
+ 186   1          // P1.0  -  Unassigned,  Open-Drain, Digital
+ 187   1          // P1.1  -  Unassigned,  Open-Drain, Digital
+ 188   1          // P1.2  -  Unassigned,  Open-Drain, Digital
+ 189   1          // P1.3  -  Unassigned,  Open-Drain, Digital
+ 190   1          // P1.4  -  Unassigned,  Open-Drain, Digital
+ 191   1          // P1.5  -  Unassigned,  Open-Drain, Digital
+ 192   1          // P1.6  -  Unassigned,  Open-Drain, Digital
+ 193   1          // P1.7  -  Unassigned,  Open-Drain, Digital
+ 194   1      
+ 195   1          // P2.0  -  Unassigned,  Open-Drain, Digital
+ 196   1          // P2.1  -  Unassigned,  Open-Drain, Digital
+ 197   1          // P2.2  -  Unassigned,  Open-Drain, Digital
+ 198   1          // P2.3  -  Unassigned,  Open-Drain, Digital
+ 199   1          // P2.4  -  Unassigned,  Open-Drain, Digital
+ 200   1          // P2.5  -  Unassigned,  Open-Drain, Digital
+ 201   1          // P2.6  -  Unassigned,  Open-Drain, Digital
+ 202   1          // P2.7  -  Unassigned,  Open-Drain, Digital
+ 203   1      
+ 204   1          // P3.0  -  Unassigned,  Open-Drain, Digital
+ 205   1      
+ 206   1          P0SKIP    = 0x3F;
+ 207   1          XBR0      = 0x04;
+ 208   1          XBR1      = 0xC0;
+ 209   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    128    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     10    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

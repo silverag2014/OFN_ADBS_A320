@@ -1,0 +1,326 @@
+C51 COMPILER V7.10   SPI_TRANSFER                                                          06/02/1987 18:18:26 PAGE 1   
+
+
+C51 COMPILER V7.10, COMPILATION OF MODULE SPI_TRANSFER
+OBJECT MODULE PLACED IN SPI_TRANSFER.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\c51.exe SPI_TRANSFER.c DB OE LARGE OT(7,SPEED)
+
+line level    source
+
+   1          
+   2          //;***************************************************************************
+   3          //;
+   4          //;        Copyright 2007 Avago Technologies Limited
+   5          //;    This code is provided by Avago Technologies as a reference.
+   6          //;     Avago Technologies makes no claims or warranties
+   7          //;    to this firmware's suitability for any application.
+   8          //;    All rights reserved. Patent Pending. 
+   9          //;
+  10          //;*************************************************************************** 
+  11          
+  12          #include <c8051f3xx.h>  // SFR declarations
+  13          #include <intrins.h>
+  14          #include <SPI_TRANSFER.h>
+  15          #include <ADBM_A320.h>
+  16          
+  17          
+  18          //------------------------------------------------------------------------------------
+  19          bdata unsigned char dummy_bit;
+  20          sbit dummy_bit7 = dummy_bit^7;
+  21          sbit dummy_bit6 = dummy_bit^6;
+  22          sbit dummy_bit5 = dummy_bit^5;
+  23          sbit dummy_bit4 = dummy_bit^4;
+  24          sbit dummy_bit3 = dummy_bit^3;
+  25          sbit dummy_bit2 = dummy_bit^2;
+  26          sbit dummy_bit1 = dummy_bit^1;
+  27          sbit dummy_bit0 = dummy_bit^0;
+  28          
+  29          #define TIME_D  1
+  30          #define TIME_D1 1
+  31          
+  32          unsigned char spi_interrupted;
+  33          //------------------------------------------------------------------------------------
+  34          void spi_init(void);
+  35          void spi_write_byte(unsigned char data_in);
+  36          unsigned char spi_read_byte(void);
+  37          void spi_write_sensor(unsigned char addr, unsigned char data_in);
+  38          void spi_write_sensor_int(unsigned char addr, unsigned char data_in);
+  39          unsigned char spi_read_sensor_int(unsigned char addr);
+  40          unsigned char spi_read_sensor(unsigned char addr);
+  41          void delay_us(unsigned char delay);
+  42          void delay1(void);
+  43          
+  44          void spi_read_motionburst(unsigned char *motion, unsigned char *deltaX, unsigned char *deltaY, unsigned ch
+             -ar *squal, unsigned char *shutterH, unsigned char *shutterL);
+  45          
+  46          //------------------------------------------------------------------------------------
+  47          void spi_init(void)
+  48          {
+  49   1              NCS = 1;
+  50   1              SCLK = 1;
+  51   1              MISO = 1;
+  52   1              MOSI = 1;
+  53   1              SHTDOWN = 0;
+  54   1              MOTION = 1;
+C51 COMPILER V7.10   SPI_TRANSFER                                                          06/02/1987 18:18:26 PAGE 2   
+
+  55   1      }
+  56          
+  57          unsigned char spi_read_byte(void)
+  58          {
+  59   1              SCLK = 0;       delay_us(TIME_D1);
+  60   1              SCLK = 1;       delay_us(TIME_D1);
+  61   1              dummy_bit7 = MISO;
+  62   1      
+  63   1              SCLK = 0;       delay_us(TIME_D1);
+  64   1              SCLK = 1;       delay_us(TIME_D1);
+  65   1              dummy_bit6 = MISO;
+  66   1      
+  67   1              SCLK = 0;       delay_us(TIME_D1);
+  68   1              SCLK = 1;       delay_us(TIME_D1);
+  69   1              dummy_bit5 = MISO;
+  70   1      
+  71   1              SCLK = 0;       delay_us(TIME_D1);
+  72   1              SCLK = 1;       delay_us(TIME_D1);
+  73   1              dummy_bit4 = MISO;
+  74   1              
+  75   1              SCLK = 0;       delay_us(TIME_D1);
+  76   1              SCLK = 1;       delay_us(TIME_D1);
+  77   1              dummy_bit3 = MISO;
+  78   1      
+  79   1              SCLK = 0;       delay_us(TIME_D1);
+  80   1              SCLK = 1;       delay_us(TIME_D1);
+  81   1              dummy_bit2 = MISO;
+  82   1      
+  83   1              SCLK = 0;       delay_us(TIME_D1);
+  84   1              SCLK = 1;       delay_us(TIME_D1);
+  85   1              dummy_bit1 = MISO;
+  86   1      
+  87   1              SCLK = 0;       delay_us(TIME_D1);
+  88   1              SCLK = 1;       delay_us(TIME_D1);
+  89   1              dummy_bit0 = MISO;
+  90   1      
+  91   1              return dummy_bit;
+  92   1      }
+  93          
+  94          
+  95          void spi_write_sensor_int(unsigned char addr, unsigned char data_in)
+  96          {
+  97   1              spi_interrupted = 1;
+  98   1      
+  99   1              NCS = 1;
+ 100   1              delay_us(TIME_D);
+ 101   1              NCS = 0;
+ 102   1              delay_us(TIME_D);
+ 103   1              spi_write_byte(addr | 0x80);
+ 104   1              delay_us(TIME_D);
+ 105   1              spi_write_byte(data_in);
+ 106   1              delay_us(TIME_D);
+ 107   1              NCS = 1;
+ 108   1      }
+ 109          
+ 110          
+ 111          void spi_write_sensor(unsigned char addr, unsigned char data_in)
+ 112          {
+ 113   1              while (1)
+ 114   1              {       spi_interrupted = 0;
+ 115   2                      NCS = 0;
+ 116   2                      delay_us(TIME_D);
+C51 COMPILER V7.10   SPI_TRANSFER                                                          06/02/1987 18:18:26 PAGE 3   
+
+ 117   2                      spi_write_byte(addr | 0x80);
+ 118   2                      delay_us(TIME_D);
+ 119   2                      spi_write_byte(data_in);
+ 120   2                      delay_us(TIME_D);
+ 121   2                      NCS = 1;
+ 122   2                      if (spi_interrupted == 0)
+ 123   2                      { break;}
+ 124   2              }
+ 125   1      
+ 126   1      }
+ 127          
+ 128          
+ 129          unsigned char spi_read_sensor(unsigned char addr)
+ 130          {
+ 131   1              unsigned char temp;
+ 132   1      
+ 133   1              while (1)
+ 134   1              {       spi_interrupted = 0;
+ 135   2                      NCS = 0;
+ 136   2                      delay_us(2);
+ 137   2                      spi_write_byte(addr);
+ 138   2                      delay_us(TIME_D);
+ 139   2                      delay1();
+ 140   2                      temp = spi_read_byte();
+ 141   2                      delay_us(2);
+ 142   2                      NCS = 1;
+ 143   2                      if (spi_interrupted == 0)
+ 144   2                      { break;}
+ 145   2              }
+ 146   1      
+ 147   1              return temp;
+ 148   1      }
+ 149          
+ 150          unsigned char spi_read_sensor_int(unsigned char addr)
+ 151          {
+ 152   1              unsigned char temp;
+ 153   1      
+ 154   1              spi_interrupted = 1;
+ 155   1      
+ 156   1              NCS = 1;
+ 157   1              delay_us(TIME_D);
+ 158   1              NCS = 0;
+ 159   1              delay_us(2);
+ 160   1              spi_write_byte(addr);
+ 161   1              delay_us(TIME_D);
+ 162   1              delay1();
+ 163   1              temp = spi_read_byte();
+ 164   1              delay_us(2);
+ 165   1              NCS = 1;
+ 166   1      
+ 167   1              return temp;
+ 168   1      }
+ 169          
+ 170          
+ 171          void spi_write_byte(unsigned char data_in)
+ 172          {
+ 173   1              P0MDOUT |= 0x04;
+ 174   1              dummy_bit = data_in;
+ 175   1      
+ 176   1              SCLK = 0;
+ 177   1              MOSI = dummy_bit7;      delay_us(TIME_D1);
+ 178   1              SCLK = 1;                       delay_us(TIME_D1);
+C51 COMPILER V7.10   SPI_TRANSFER                                                          06/02/1987 18:18:26 PAGE 4   
+
+ 179   1      
+ 180   1              SCLK = 0;
+ 181   1              MOSI = dummy_bit6;      delay_us(TIME_D1);
+ 182   1              SCLK = 1;                       delay_us(TIME_D1);
+ 183   1      
+ 184   1              SCLK = 0;
+ 185   1              MOSI = dummy_bit5;      delay_us(TIME_D1);
+ 186   1              SCLK = 1;                       delay_us(TIME_D1);
+ 187   1      
+ 188   1              SCLK = 0;
+ 189   1              MOSI = dummy_bit4;      delay_us(TIME_D1);
+ 190   1              SCLK = 1;                       delay_us(TIME_D1);
+ 191   1      
+ 192   1              SCLK = 0;
+ 193   1              MOSI = dummy_bit3;      delay_us(TIME_D1);
+ 194   1              SCLK = 1;                       delay_us(TIME_D1);
+ 195   1      
+ 196   1              SCLK = 0;
+ 197   1              MOSI = dummy_bit2;      delay_us(TIME_D1);
+ 198   1              SCLK = 1;                       delay_us(TIME_D1);
+ 199   1      
+ 200   1              SCLK = 0;
+ 201   1              MOSI = dummy_bit1;      delay_us(TIME_D1);
+ 202   1              SCLK = 1;                       delay_us(TIME_D1);
+ 203   1      
+ 204   1              SCLK = 0;
+ 205   1              MOSI = dummy_bit0;      delay_us(TIME_D1);
+ 206   1              SCLK = 1;                       delay_us(TIME_D1);
+ 207   1      
+ 208   1              P0MDOUT &= ~0x04;
+ 209   1              MOSI = 1;
+ 210   1      }
+ 211          
+ 212          #ifdef MOTION_BURST
+              void spi_read_motionburst(unsigned char *motion, unsigned char *deltaX, unsigned char *deltaY, unsigned ch
+             -ar *squal, unsigned char *shutterH, unsigned char *shutterL)
+              {
+                      unsigned char spi_temp;
+              
+                      NCS = 0;
+                      spi_write_byte(0x02);
+                      delay_us(5);
+                      *motion = spi_read_byte();
+                      delay_us(TIME_D);
+                      *deltaY = spi_read_byte();      //deltaX <--> deltaY
+                      delay_us(TIME_D);
+                      *deltaX = spi_read_byte();      //deltaY <--> deltaX
+                      delay_us(TIME_D);
+                      *squal = spi_read_byte();
+                      delay_us(TIME_D);
+                      *shutterH = spi_read_byte();
+                      delay_us(TIME_D);
+                      *shutterL = spi_read_byte();
+                      NCS = 1;
+              
+                      spi_temp = *deltaY;
+                      *deltaY = *deltaX;
+                      *deltaX = spi_temp;
+              }
+              #endif
+ 238          
+ 239          void delay_us(unsigned char delay)
+C51 COMPILER V7.10   SPI_TRANSFER                                                          06/02/1987 18:18:26 PAGE 5   
+
+ 240          {
+ 241   1              for(;delay > 0; delay--)
+ 242   1              {
+ 243   2                      _nop_();
+ 244   2                      _nop_();
+ 245   2                      _nop_();
+ 246   2                      _nop_();
+ 247   2                      _nop_();
+ 248   2                      _nop_();
+ 249   2                      _nop_();
+ 250   2                      _nop_();
+ 251   2                      _nop_();
+ 252   2                      _nop_();
+ 253   2                      _nop_();
+ 254   2                      _nop_();
+ 255   2                      _nop_();
+ 256   2                      _nop_();
+ 257   2                      _nop_();
+ 258   2                      _nop_();
+ 259   2                      _nop_();
+ 260   2                      _nop_();
+ 261   2              }
+ 262   1      }
+ 263          
+ 264          void delay1(void)
+ 265          {
+ 266   1              _nop_();
+ 267   1              _nop_();
+ 268   1              _nop_();
+ 269   1              _nop_();
+ 270   1              _nop_();
+ 271   1              _nop_();
+ 272   1              _nop_();
+ 273   1              _nop_();
+ 274   1              _nop_();
+ 275   1              _nop_();
+ 276   1              _nop_();
+ 277   1              _nop_();
+ 278   1              _nop_();
+ 279   1              _nop_();
+ 280   1              _nop_();
+ 281   1              _nop_();
+ 282   1              _nop_();
+ 283   1              _nop_();
+ 284   1              _nop_();
+ 285   1              _nop_();
+ 286   1              _nop_();
+ 287   1              _nop_();
+ 288   1      
+ 289   1      }
+ 290          
+ 291          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    602    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      1       8
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      1    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+C51 COMPILER V7.10   SPI_TRANSFER                                                          06/02/1987 18:18:26 PAGE 6   
+
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

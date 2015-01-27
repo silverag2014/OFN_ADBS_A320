@@ -1,0 +1,474 @@
+C51 COMPILER V7.10   ADBM_A320                                                             06/02/1987 18:18:26 PAGE 1   
+
+
+C51 COMPILER V7.10, COMPILATION OF MODULE ADBM_A320
+OBJECT MODULE PLACED IN ADBM_A320.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\c51.exe ADBM_A320.c DB OE LARGE OT(7,SPEED)
+
+line level    source
+
+   1          
+   2          //;***************************************************************************
+   3          //;
+   4          //;        Copyright 2007 Avago Technologies Limited
+   5          //;    This code is provided by Avago Technologies as a reference.
+   6          //;     Avago Technologies makes no claims or warranties
+   7          //;    to this firmware's suitability for any application.
+   8          //;    All rights reserved. Patent Pending. 
+   9          //;
+  10          //;*************************************************************************** 
+  11          
+  12          #include "c8051f3xx.h"
+  13          #include <intrins.h>
+  14          #include <SPI_TRANSFER.h>
+  15          #include <i2c.h>
+  16          #include "timer.h"
+  17          #include "ADBM_A320.h"
+  18          
+  19          
+  20          unsigned char spi_temp;
+  21          
+  22          extern unsigned char i2c_buffer[10];
+  23          
+  24          
+  25          void Initiliaze_A320(void);
+  26          void spi_enable(void);
+  27          void i2c_enable(void);
+  28          void Power_Up_Sequence(void);
+  29          void Initiliaze_A320_I2C(void);
+  30          void Power_Up_Sequence_I2C(void);
+  31          void i2c_delay(void);
+  32          
+  33          
+  34          void spi_enable(void)
+  35          {
+  36   1              SMB0CF &= ~0x80;        // disable i2c
+  37   1              EIP1   &= ~0x01;
+  38   1              IO_SELECT = 1;          // enable spi communication
+  39   1      
+  40   1              SHTDOWN = 0;//-------------
+  41   1              NRESET = 1;//-------------
+  42   1      
+  43   1              spi_init();
+  44   1      }
+  45          
+  46          
+  47          void i2c_enable(void)
+  48          {
+  49   1              IO_SELECT = 0;          // enable i2c communication
+  50   1              EIP1      |= 0x01;
+  51   1      
+  52   1              SHTDOWN = 0;
+  53   1              NRESET = 1;
+  54   1      
+  55   1              MOSI = 0;                       // device address A0
+C51 COMPILER V7.10   ADBM_A320                                                             06/02/1987 18:18:26 PAGE 2   
+
+  56   1              NCS = 0;                        // device address A1
+  57   1              i2c_Init();                     // enable i2c
+  58   1      }
+  59          
+  60          void Initiliaze_A320(void)
+  61          {
+  62   1              spi_enable();
+  63   1              EA = 0;
+  64   1              spi_temp = spi_read_sensor(ADBM_A320_PRODUCTID_ADDR);   
+  65   1              Power_Up_Sequence();
+  66   1              EA = 1;
+  67   1      
+  68   1              t_temp_data = 50;
+  69   1              time_temp = 1;
+  70   1              while(time_temp == 1);
+  71   1      
+  72   1              EA = 0;
+  73   1              spi_write_sensor(ADBM_A320_CONFIGURATIONBITS_ADDR, 0x80);  // Configuration register data (Normal 800CPI)
+  74   1              EA = 1;
+  75   1      
+  76   1      }
+  77          
+  78          void Power_Up_Sequence(void)
+  79          {
+  80   1              NCS = 0;                // NCS Low
+  81   1              SHTDOWN = 0;    // Shutdown Low
+  82   1              ORIENT = 0;             // Orient Low
+  83   1              IO_SELECT = 1;  // select SPI Mode
+  84   1              NRESET = 0;             // NRESET Low
+  85   1              _nop_();
+  86   1              _nop_();
+  87   1              _nop_();
+  88   1              _nop_();
+  89   1              _nop_();
+  90   1              _nop_();
+  91   1              NRESET = 1;             // NRESET High
+  92   1      
+  93   1      
+  94   1              ORIENT = 1;             // For OFN orientation
+  95   1      
+  96   1      
+  97   1      
+  98   1              // Perform soft reset by writing 0x5A to address 0x3A
+  99   1              spi_write_sensor(ADBM_A320_SOFTRESET_ADDR, 0x5A);
+ 100   1              _nop_();
+ 101   1              _nop_();
+ 102   1      
+ 103   1              #ifdef MOTION_BURST
+                      spi_write_sensor(ADBM_A320_IO_MODE_ADDR, ADBM_A320_BURST);
+                      #endif
+ 106   1      
+ 107   1              spi_write_sensor(ADBM_A320_OFN_ENGINE_ADDR, 0xE4); // Write 0xA0 to address 0x60 
+ 108   1              _nop_();
+ 109   1              _nop_();
+ 110   1      
+ 111   1              // speed switching thresholds
+ 112   1              spi_write_sensor(ADBM_A320_OFN_RESOLUTION_ADDR, 0x12); // Wakeup 500DPI
+ 113   1              _nop_();
+ 114   1              _nop_();
+ 115   1      
+ 116   1              spi_write_sensor(ADBM_A320_OFN_SPEED_CONTROL_ADDR, 0x0E); // 16ms, low DPI
+ 117   1              _nop_();
+C51 COMPILER V7.10   ADBM_A320                                                             06/02/1987 18:18:26 PAGE 3   
+
+ 118   1              _nop_();
+ 119   1      
+ 120   1              spi_write_sensor(ADBM_A320_OFN_SPEED_ST12_ADDR, 0x08); 
+ 121   1              _nop_();
+ 122   1              _nop_();
+ 123   1      
+ 124   1              spi_write_sensor(ADBM_A320_OFN_SPEED_ST21_ADDR, 0x06); 
+ 125   1              _nop_();
+ 126   1              _nop_();           
+ 127   1      
+ 128   1              spi_write_sensor(ADBM_A320_OFN_SPEED_ST23_ADDR, 0x40); 
+ 129   1              _nop_();
+ 130   1              _nop_(); 
+ 131   1      
+ 132   1              spi_write_sensor(ADBM_A320_OFN_SPEED_ST32_ADDR, 0x08); 
+ 133   1              _nop_();
+ 134   1              _nop_(); 
+ 135   1      
+ 136   1              spi_write_sensor(ADBM_A320_OFN_SPEED_ST34_ADDR, 0x48); 
+ 137   1              _nop_();
+ 138   1              _nop_(); 
+ 139   1      
+ 140   1              spi_write_sensor(ADBM_A320_OFN_SPEED_ST43_ADDR, 0x0A); 
+ 141   1              _nop_();
+ 142   1              _nop_(); 
+ 143   1      
+ 144   1              spi_write_sensor(ADBM_A320_OFN_SPEED_ST45_ADDR, 0x50); 
+ 145   1              _nop_();
+ 146   1              _nop_(); 
+ 147   1      
+ 148   1              spi_write_sensor(ADBM_A320_OFN_SPEED_ST54_ADDR, 0x48); 
+ 149   1              _nop_();
+ 150   1              _nop_(); 
+ 151   1      
+ 152   1      
+ 153   1              // assert/ deassert thresholds
+ 154   1              spi_write_sensor(ADBM_A320_OFN_AD_ATH_HIGH_ADDR, 0x34); 
+ 155   1              _nop_();
+ 156   1              _nop_(); 
+ 157   1      
+ 158   1              spi_write_sensor(ADBM_A320_OFN_AD_DTH_HIGH_ADDR, 0x3C); 
+ 159   1              _nop_();
+ 160   1              _nop_(); 
+ 161   1      
+ 162   1              spi_write_sensor(ADBM_A320_OFN_AD_ATH_LOW_ADDR, 0x18); 
+ 163   1              _nop_();
+ 164   1              _nop_(); 
+ 165   1      
+ 166   1              spi_write_sensor(ADBM_A320_OFN_AD_DTH_LOW_ADDR, 0x20); 
+ 167   1              _nop_();
+ 168   1              _nop_(); 
+ 169   1      
+ 170   1      
+ 171   1              // FPD
+ 172   1              spi_write_sensor(ADBM_A320_OFN_FPD_CTRL_ADDR, 0x50); 
+ 173   1              _nop_();
+ 174   1              _nop_(); 
+ 175   1      
+ 176   1      //      spi_write_sensor(0x76, 0x0F); 
+ 177   1      //      _nop_();
+ 178   1      //      _nop_(); 
+ 179   1      
+C51 COMPILER V7.10   ADBM_A320                                                             06/02/1987 18:18:26 PAGE 4   
+
+ 180   1      
+ 181   1              // XYQ
+ 182   1              spi_write_sensor(ADBM_A320_OFN_QUANTIZE_CTRL_ADDR, 0x99); 
+ 183   1              _nop_();
+ 184   1              _nop_(); 
+ 185   1      
+ 186   1              spi_write_sensor(ADBM_A320_OFN_XYQ_THRESH_ADDR, 0x02); 
+ 187   1              _nop_();
+ 188   1              _nop_();
+ 189   1      
+ 190   1              // Read from registers 0x02, 0x03 and 0x04
+ 191   1              spi_temp = spi_read_sensor(ADBM_A320_MOTION_ADDR);
+ 192   1              _nop_();
+ 193   1              _nop_();
+ 194   1              spi_temp = spi_read_sensor(ADBM_A320_DELTAX_ADDR);
+ 195   1              _nop_();
+ 196   1              _nop_();
+ 197   1              spi_temp = spi_read_sensor(ADBM_A320_DELTAY_ADDR);
+ 198   1              _nop_();
+ 199   1              _nop_();
+ 200   1      
+ 201   1              // Lengthen Rest1 to Rest2 downshift time
+ 202   1              spi_write_sensor(0x29, 0xC1); 
+ 203   1              _nop_();
+ 204   1              _nop_();
+ 205   1      
+ 206   1              spi_write_sensor(0x15, 0xFF); 
+ 207   1              _nop_();
+ 208   1              _nop_();
+ 209   1      
+ 210   1              spi_write_sensor(0x29, 0xA1); 
+ 211   1              _nop_();
+ 212   1              _nop_();
+ 213   1      
+ 214   1      
+ 215   1      }
+ 216          
+ 217          
+ 218          void Initiliaze_A320_I2C(void)
+ 219          {
+ 220   1              EIE1 &= ~0x02;
+ 221   1              Power_Up_Sequence_I2C();
+ 222   1              EIE1 |= 0x02;
+ 223   1      
+ 224   1              t_temp_data = 50;
+ 225   1              time_temp = 1;
+ 226   1              while(time_temp == 1);
+ 227   1      
+ 228   1              EIE1 &= ~0x02;
+ 229   1              while(i2c_status != I2C_FREE);
+ 230   1              i2c_buffer[0] = 0x80;
+ 231   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_CONFIGURATIONBITS_ADDR, i2c_buffer, 1); // Configuration register data 
+             -(Normal 800CPI)  
+ 232   1              while(i2c_status != I2C_FREE);
+ 233   1              EIE1 |= 0x02;
+ 234   1      
+ 235   1      }
+ 236          
+ 237          void Power_Up_Sequence_I2C(void)
+ 238          {
+ 239   1              NCS = 0;                // NCS Low
+ 240   1              SHTDOWN = 0;    // Shutdown Low
+C51 COMPILER V7.10   ADBM_A320                                                             06/02/1987 18:18:26 PAGE 5   
+
+ 241   1              ORIENT = 0;             // Orient Low
+ 242   1              IO_SELECT = 0;  // select I2C Mode
+ 243   1      
+ 244   1              MOSI = 0;                       // device address A0
+ 245   1              NCS = 0;                        // device address A1
+ 246   1      
+ 247   1              NRESET = 0;             // NRESET Low
+ 248   1              i2c_delay();
+ 249   1              NRESET = 1;             // NRESET High
+ 250   1      
+ 251   1              ORIENT = 1;             // For OFN orientation
+ 252   1      
+ 253   1              EIP1      |= 0x01;
+ 254   1              i2c_Init();                     // enable i2c
+ 255   1      
+ 256   1              i2c_delay();
+ 257   1      
+ 258   1              while(i2c_status != I2C_FREE);
+ 259   1              i2c_ByteRead(I2C_ADDR, ADBM_A320_PRODUCTID_ADDR, i2c_buffer, 1);        
+ 260   1              while(i2c_status != I2C_FREE);
+ 261   1              i2c_delay();
+ 262   1      
+ 263   1      
+ 264   1              // Perform soft reset by writing 0x5A to address 0x3A
+ 265   1              while(i2c_status != I2C_FREE); 
+ 266   1              i2c_buffer[0] = 0x5A;
+ 267   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_SOFTRESET_ADDR, i2c_buffer, 1); // Configuration register data (Normal 
+             -800CPI)  
+ 268   1              while(i2c_status != I2C_FREE);
+ 269   1              i2c_delay();
+ 270   1      
+ 271   1      
+ 272   1              while(i2c_status != I2C_FREE); 
+ 273   1              i2c_buffer[0] = 0xE4;
+ 274   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_ENGINE_ADDR, i2c_buffer, 1); // Write 0xA0 to address 0x60 
+ 275   1              while(i2c_status != I2C_FREE);
+ 276   1              i2c_delay();
+ 277   1      
+ 278   1              // speed switching thresholds
+ 279   1              while(i2c_status != I2C_FREE); 
+ 280   1              i2c_buffer[0] = 0x12;
+ 281   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_RESOLUTION_ADDR, i2c_buffer, 1); // Wakeup 500DPI
+ 282   1              while(i2c_status != I2C_FREE);
+ 283   1              i2c_delay();
+ 284   1      
+ 285   1              while(i2c_status != I2C_FREE); 
+ 286   1              i2c_buffer[0] = 0x0E;
+ 287   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_SPEED_CONTROL_ADDR, i2c_buffer, 1); // 16ms, low DPI
+ 288   1              while(i2c_status != I2C_FREE);
+ 289   1              i2c_delay();
+ 290   1      
+ 291   1              while(i2c_status != I2C_FREE); 
+ 292   1              i2c_buffer[0] = 0x08;
+ 293   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_SPEED_ST12_ADDR, i2c_buffer, 1); 
+ 294   1              while(i2c_status != I2C_FREE);
+ 295   1              i2c_delay();
+ 296   1       
+ 297   1              while(i2c_status != I2C_FREE); 
+ 298   1              i2c_buffer[0] = 0x06;
+ 299   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_SPEED_ST21_ADDR, i2c_buffer, 1); 
+ 300   1              while(i2c_status != I2C_FREE);
+ 301   1              i2c_delay();           
+C51 COMPILER V7.10   ADBM_A320                                                             06/02/1987 18:18:26 PAGE 6   
+
+ 302   1      
+ 303   1              while(i2c_status != I2C_FREE); 
+ 304   1              i2c_buffer[0] = 0x40;
+ 305   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_SPEED_ST23_ADDR, i2c_buffer, 1); 
+ 306   1              while(i2c_status != I2C_FREE);
+ 307   1              i2c_delay(); 
+ 308   1      
+ 309   1              while(i2c_status != I2C_FREE); 
+ 310   1              i2c_buffer[0] = 0x08;
+ 311   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_SPEED_ST32_ADDR, i2c_buffer, 1); 
+ 312   1              while(i2c_status != I2C_FREE);
+ 313   1              i2c_delay(); 
+ 314   1      
+ 315   1              while(i2c_status != I2C_FREE); 
+ 316   1              i2c_buffer[0] = 0x48;
+ 317   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_SPEED_ST34_ADDR, i2c_buffer, 1); 
+ 318   1              while(i2c_status != I2C_FREE);
+ 319   1              i2c_delay(); 
+ 320   1      
+ 321   1              while(i2c_status != I2C_FREE); 
+ 322   1              i2c_buffer[0] = 0x0A;
+ 323   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_SPEED_ST43_ADDR, i2c_buffer, 1);
+ 324   1              while(i2c_status != I2C_FREE);
+ 325   1              i2c_delay();
+ 326   1      
+ 327   1              while(i2c_status != I2C_FREE); 
+ 328   1              i2c_buffer[0] = 0x50;
+ 329   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_SPEED_ST45_ADDR, i2c_buffer, 1); 
+ 330   1              while(i2c_status != I2C_FREE);
+ 331   1              i2c_delay();
+ 332   1      
+ 333   1              while(i2c_status != I2C_FREE); 
+ 334   1              i2c_buffer[0] = 0x48;
+ 335   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_SPEED_ST54_ADDR, i2c_buffer, 1); 
+ 336   1              while(i2c_status != I2C_FREE); 
+ 337   1              i2c_delay(); 
+ 338   1      
+ 339   1      
+ 340   1              // assert/ deassert thresholds
+ 341   1              while(i2c_status != I2C_FREE); 
+ 342   1              i2c_buffer[0] = 0x34;
+ 343   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_AD_ATH_HIGH_ADDR, i2c_buffer, 1); 
+ 344   1              while(i2c_status != I2C_FREE);
+ 345   1              i2c_delay();
+ 346   1      
+ 347   1              while(i2c_status != I2C_FREE); 
+ 348   1              i2c_buffer[0] = 0x3C;
+ 349   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_AD_DTH_HIGH_ADDR, i2c_buffer, 1); 
+ 350   1              while(i2c_status != I2C_FREE);
+ 351   1              i2c_delay(); 
+ 352   1      
+ 353   1              while(i2c_status != I2C_FREE); 
+ 354   1              i2c_buffer[0] = 0x18;
+ 355   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_AD_ATH_LOW_ADDR, i2c_buffer, 1); 
+ 356   1              while(i2c_status != I2C_FREE);
+ 357   1              i2c_delay();
+ 358   1       
+ 359   1              while(i2c_status != I2C_FREE); 
+ 360   1              i2c_buffer[0] = 0x20;
+ 361   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_AD_DTH_LOW_ADDR, i2c_buffer, 1);   
+ 362   1              while(i2c_status != I2C_FREE);
+ 363   1              i2c_delay(); 
+C51 COMPILER V7.10   ADBM_A320                                                             06/02/1987 18:18:26 PAGE 7   
+
+ 364   1      
+ 365   1      
+ 366   1              // FPD
+ 367   1              while(i2c_status != I2C_FREE); 
+ 368   1              i2c_buffer[0] = 0x50;
+ 369   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_FPD_CTRL_ADDR, i2c_buffer, 1); 
+ 370   1              while(i2c_status != I2C_FREE);
+ 371   1              i2c_delay(); 
+ 372   1      
+ 373   1      //      while(i2c_status != I2C_FREE); 
+ 374   1      //      i2c_buffer[0] = 0x0F;
+ 375   1      //      i2c_ByteWrite(I2C_ADDR, 0x76, i2c_buffer, 1); 
+ 376   1      //      while(i2c_status != I2C_FREE);
+ 377   1      //      i2c_delay();
+ 378   1      
+ 379   1      
+ 380   1              // XYQ
+ 381   1              while(i2c_status != I2C_FREE); 
+ 382   1              i2c_buffer[0] = 0x99;
+ 383   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_QUANTIZE_CTRL_ADDR, i2c_buffer, 1);  
+ 384   1              while(i2c_status != I2C_FREE);
+ 385   1              i2c_delay(); 
+ 386   1      
+ 387   1              while(i2c_status != I2C_FREE); 
+ 388   1              i2c_buffer[0] = 0x02;
+ 389   1              i2c_ByteWrite(I2C_ADDR, ADBM_A320_OFN_XYQ_THRESH_ADDR, i2c_buffer, 1); 
+ 390   1              while(i2c_status != I2C_FREE);
+ 391   1              i2c_delay();
+ 392   1      
+ 393   1      
+ 394   1              // Read from registers 0x02, 0x03 and 0x04
+ 395   1              while(i2c_status != I2C_FREE); 
+ 396   1              i2c_ByteRead(I2C_ADDR, ADBM_A320_MOTION_ADDR, i2c_buffer, 1);
+ 397   1              while(i2c_status != I2C_FREE);
+ 398   1              i2c_delay();
+ 399   1      
+ 400   1              while(i2c_status != I2C_FREE); 
+ 401   1              i2c_ByteRead(I2C_ADDR, ADBM_A320_DELTAX_ADDR, i2c_buffer, 1);
+ 402   1              while(i2c_status != I2C_FREE);
+ 403   1              i2c_delay();
+ 404   1      
+ 405   1              while(i2c_status != I2C_FREE); 
+ 406   1              i2c_ByteRead(I2C_ADDR, ADBM_A320_DELTAY_ADDR, i2c_buffer, 1);
+ 407   1              while(i2c_status != I2C_FREE);
+ 408   1              i2c_delay();
+ 409   1      
+ 410   1      
+ 411   1              // Lengthen Rest1 to Rest2 downshift time
+ 412   1              while(i2c_status != I2C_FREE); 
+ 413   1              i2c_buffer[0] = 0xC1;
+ 414   1              i2c_ByteWrite(I2C_ADDR, 0x29, i2c_buffer, 1); 
+ 415   1              while(i2c_status != I2C_FREE);
+ 416   1              i2c_delay(); 
+ 417   1      
+ 418   1              while(i2c_status != I2C_FREE); 
+ 419   1              i2c_buffer[0] = 0xFF;
+ 420   1              i2c_ByteWrite(I2C_ADDR, 0x15, i2c_buffer, 1); 
+ 421   1              while(i2c_status != I2C_FREE);
+ 422   1              i2c_delay(); 
+ 423   1      
+ 424   1              while(i2c_status != I2C_FREE); 
+ 425   1              i2c_buffer[0] = 0xA1;
+C51 COMPILER V7.10   ADBM_A320                                                             06/02/1987 18:18:26 PAGE 8   
+
+ 426   1              i2c_ByteWrite(I2C_ADDR, 0x29, i2c_buffer, 1); 
+ 427   1              while(i2c_status != I2C_FREE);
+ 428   1              i2c_delay(); 
+ 429   1      }
+ 430          
+ 431          void i2c_delay(void)
+ 432          {
+ 433   1              _nop_();_nop_();
+ 434   1      }
+ 435          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1498    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      1    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

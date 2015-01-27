@@ -1,0 +1,72 @@
+
+//;***************************************************************************
+//;
+//;        Copyright 2007 Avago Technologies Limited
+//;    This code is provided by Avago Technologies as a reference.
+//;     Avago Technologies makes no claims or warranties
+//;    to this firmware's suitability for any application.
+//;    All rights reserved. Patent Pending. 
+//;
+//;*************************************************************************** 
+
+
+// ************************** DATA TYPES & DEFINITIONS **************************
+
+#define ADBM_A520_POWERUP_RETRIES  		 10
+
+// Configuration Register Individual Bit Field Settings
+#define ADBM_A520_MOTION_MOT       		 0x80
+#define ADBM_A520_MOTION_PIXRDY    		 0x40
+#define ADBM_A520_MOTION_PIXFIRST  		 0x20
+#define ADBM_A520_MOTION_OVF       		 0x10
+#define ADBM_A520_MOTION_GPIO      		 0x01
+
+// Configuration Register Settings
+#define ADBM_A520_SOFTRESET_INIT  		 0x5A
+#define ADBM_A520_SELF_TEST     		 0x01
+#define ADBM_A520_NO_REST              	 0x00
+#define ADBM_A520_REST1              	 0x10
+#define ADBM_A520_REST2              	 0x20
+#define ADBM_A520_REST3              	 0x30
+#define ADBM_A520_RES500CPI          	 0x00
+#define ADBM_A520_RES1000CPI          	 0x80
+#define ADBM_A520_LED0               	 0x01     //1:LED continuous ON
+#define ADBM_A520_LED3             	 	 0x08     //0:13mA; 1:20mA
+#define ADBM_A520_BURST               	 0x10
+#define ADBM_A520_SPI               	 0x04
+#define ADBM_A520_TWI              	 	 0x01
+#define ADBM_A520_RUN_MODE          	 0x00
+#define ADBM_A520_REST1_MODE          	 0x40
+#define ADBM_A520_REST2_MODE          	 0x80
+#define ADBM_A520_REST3_MODE          	 0xC0
+
+// ADBM_A520 Register Addresses
+#define ADBM_A520_PRODUCTID_ADDR         0x00     //0x83
+#define ADBM_A520_REVISIONID_ADDR        0x01     //0x00
+#define ADBM_A520_MOTION_ADDR            0x02
+#define ADBM_A520_DELTAX_ADDR            0x03
+#define ADBM_A520_DELTAY_ADDR            0x04
+#define ADBM_A520_SQUAL_ADDR             0x05
+#define ADBM_A520_SHUTTERUPPER_ADDR      0x06
+#define ADBM_A520_SHUTTERLOWER_ADDR      0x07
+#define ADBM_A520_MAXIMUMPIXEL_ADDR      0x08
+#define ADBM_A520_PIXELSUM_ADDR          0x09
+#define ADBM_A520_MINIMUMPIXEL_ADDR      0x0A
+#define ADBM_A520_PIXELGRAB_ADDR         0x0B
+#define ADBM_A520_CRC0_ADDR              0x0C
+#define ADBM_A520_CRC1_ADDR              0x0D
+#define ADBM_A520_CRC2_ADDR              0x0E
+#define ADBM_A520_CRC3_ADDR              0x0F
+#define ADBM_A520_SELFTEST_ADDR          0x10
+#define ADBM_A520_CONFIGURATIONBITS_ADDR 0x11
+#define ADBM_A520_LED_CONTROL_ADDR       0x1A
+#define ADBM_A520_IO_MODE_ADDR           0x1C
+#define ADBM_A520_OBSERVATION_ADDR       0x2E
+#define ADBM_A520_SOFTRESET_ADDR      	 0x3A     //0x5A
+#define ADBM_A520_SHUTTER_MAX_HI_ADDR    0x3B
+#define ADBM_A520_SHUTTER_MAX_LO_ADDR    0x3C
+#define ADBM_A520_INVERSEREVISIONID_ADDR 0x3E     //0xFF
+#define ADBM_A520_INVERSEPRODUCTID_ADDR  0x3F     //0x7C
+
+//------------------------------------------------------------
+

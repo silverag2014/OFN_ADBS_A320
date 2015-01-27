@@ -1,0 +1,432 @@
+C51 COMPILER V8.00   ADBM_A520                                                             08/13/2008 10:41:30 PAGE 1   
+
+
+C51 COMPILER V8.00, COMPILATION OF MODULE ADBM_A520
+OBJECT MODULE PLACED IN ADBM_A520.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\c51.exe ADBM_A520.c DB OE LARGE OT(7,SPEED)
+
+line level    source
+
+   1          
+   2          //;***************************************************************************
+   3          //;
+   4          //;        Copyright 2007 Avago Technologies Limited
+   5          //;    This code is provided by Avago Technologies as a reference.
+   6          //;     Avago Technologies makes no claims or warranties
+   7          //;    to this firmware's suitability for any application.
+   8          //;    All rights reserved. Patent Pending. 
+   9          //;
+  10          //;*************************************************************************** 
+  11          
+  12          #include "c8051f3xx.h"
+  13          #include <intrins.h>
+  14          #include <SPI_TRANSFER.h>
+  15          #include <i2c.h>
+  16          #include "timer.h"
+  17          
+  18          
+  19          unsigned char spi_temp;
+  20          
+  21          extern unsigned char i2c_buffer[10];
+  22          
+  23          
+  24          void Initiliaze_A520(void);
+  25          void spi_enable(void);
+  26          void i2c_enable(void);
+  27          void Power_Up_Sequence(void);
+  28          void Initiliaze_A520_I2C(void);
+  29          void Power_Up_Sequence_I2C(void);
+  30          void i2c_delay(void);
+  31          
+  32          
+  33          void spi_enable(void)
+  34          {
+  35   1              SMB0CF &= ~0x80;        // disable i2c
+  36   1              EIP1   &= ~0x01;
+  37   1              IO_SELECT = 1;          // enable spi communication
+  38   1      
+  39   1              SHTDOWN = 0;//-------------
+  40   1              NRESET = 1;//-------------
+  41   1      
+  42   1              spi_init();
+  43   1      }
+  44          
+  45          
+  46          void i2c_enable(void)
+  47          {
+  48   1              IO_SELECT = 0;          // enable i2c communication
+  49   1              EIP1      |= 0x01;
+  50   1      
+  51   1              SHTDOWN = 0;
+  52   1              NRESET = 1;
+  53   1      
+  54   1              MOSI = 0;                       // device address A0
+  55   1              NCS = 0;                        // device address A1
+C51 COMPILER V8.00   ADBM_A520                                                             08/13/2008 10:41:30 PAGE 2   
+
+  56   1              i2c_Init();                     // enable i2c
+  57   1      }
+  58          
+  59          void Initiliaze_A520(void)
+  60          {
+  61   1              spi_enable();
+  62   1              EA = 0;
+  63   1              spi_temp = spi_read_sensor(ADBM_A520_PRODUCTID_ADDR);   
+*** ERROR C202 IN LINE 63 OF ADBM_A520.C: 'ADBM_A520_PRODUCTID_ADDR': undefined identifier
+  64   1              Power_Up_Sequence();
+  65   1              EA = 1;
+  66   1      
+  67   1              t_temp_data = 50;
+  68   1              time_temp = 1;
+  69   1              while(time_temp == 1);
+  70   1      
+  71   1              EA = 0;
+  72   1              spi_write_sensor(ADBM_A520_CONFIGURATIONBITS_ADDR, 0x80);  // Configuration register data (Normal 800CPI)
+*** ERROR C202 IN LINE 72 OF ADBM_A520.C: 'ADBM_A520_CONFIGURATIONBITS_ADDR': undefined identifier
+  73   1              EA = 1;
+  74   1      
+  75   1      }
+  76          
+  77          void Power_Up_Sequence(void)
+  78          {
+  79   1              NCS = 0;                // NCS Low
+  80   1              SHTDOWN = 0;    // Shutdown Low
+  81   1              ORIENT = 0;             // Orient Low
+  82   1              IO_SELECT = 1;  // select SPI Mode
+  83   1              NRESET = 0;             // NRESET Low
+  84   1              _nop_();
+  85   1              _nop_();
+  86   1              _nop_();
+  87   1              _nop_();
+  88   1              _nop_();
+  89   1              _nop_();
+  90   1              NRESET = 1;             // NRESET High
+  91   1      
+  92   1      
+  93   1              ORIENT = 1;             // For OFN orientation
+  94   1      
+  95   1              // Perform soft reset by writing 0x5A to address 0x3A
+  96   1              spi_write_sensor(ADBM_A520_SOFTRESET_ADDR, 0x5A);
+*** ERROR C202 IN LINE 96 OF ADBM_A520.C: 'ADBM_A520_SOFTRESET_ADDR': undefined identifier
+  97   1              _nop_();
+  98   1              _nop_();
+  99   1      
+ 100   1              #ifdef MOTION_BURST
+                      spi_write_sensor(ADBM_A520_IO_MODE_ADDR, ADBM_A520_BURST);
+                      #endif
+ 103   1      
+ 104   1                      // Enable OFN functions
+ 105   1              spi_write_sensor(0x60, 0xE4); 
+ 106   1              _nop_();
+ 107   1              _nop_();
+ 108   1      
+ 109   1              // speed switching thresholds
+ 110   1              spi_write_sensor(0x62, 0x1A); // Wakeup 500DPI
+ 111   1              _nop_();
+ 112   1              _nop_();
+ 113   1      
+ 114   1              spi_write_sensor(0x63, 0x0E); // 16ms, low DPI
+C51 COMPILER V8.00   ADBM_A520                                                             08/13/2008 10:41:30 PAGE 3   
+
+ 115   1              _nop_();
+ 116   1              _nop_();
+ 117   1      
+ 118   1              spi_write_sensor(0x64, 0x06); 
+ 119   1              _nop_();
+ 120   1              _nop_();
+ 121   1      
+ 122   1              spi_write_sensor(0x65, 0x03); 
+ 123   1              _nop_();
+ 124   1              _nop_();           
+ 125   1      
+ 126   1              spi_write_sensor(0x66, 0x08); 
+ 127   1              _nop_();
+ 128   1              _nop_(); 
+ 129   1      
+ 130   1              spi_write_sensor(0x67, 0x04); 
+ 131   1              _nop_();
+ 132   1              _nop_(); 
+ 133   1      
+ 134   1              spi_write_sensor(0x68, 0x10); 
+ 135   1              _nop_();
+ 136   1              _nop_(); 
+ 137   1      
+ 138   1              spi_write_sensor(0x69, 0x08); 
+ 139   1              _nop_();
+ 140   1              _nop_(); 
+ 141   1      
+ 142   1              // assert/ deassert thresholds
+ 143   1              spi_write_sensor(0x6D, 0xC4); 
+ 144   1              _nop_();
+ 145   1              _nop_();
+ 146   1      
+ 147   1              spi_write_sensor(0x6E, 0x44); 
+ 148   1              _nop_();
+ 149   1              _nop_(); 
+ 150   1      
+ 151   1              spi_write_sensor(0x6F, 0x51); 
+ 152   1              _nop_();
+ 153   1              _nop_(); 
+ 154   1      
+ 155   1              spi_write_sensor(0x70, 0x38); 
+ 156   1              _nop_();
+ 157   1              _nop_(); 
+ 158   1      
+ 159   1              spi_write_sensor(0x71, 0x44); 
+ 160   1              _nop_();
+ 161   1              _nop_(); 
+ 162   1      
+ 163   1      
+ 164   1              // FPD
+ 165   1              spi_write_sensor(0x75, 0x50); 
+ 166   1              _nop_();
+ 167   1              _nop_(); 
+ 168   1      
+ 169   1              spi_write_sensor(0x76, 0x0F); 
+ 170   1              _nop_();
+ 171   1              _nop_(); 
+ 172   1      
+ 173   1      
+ 174   1              // XYQ
+ 175   1              spi_write_sensor(0x73, 0x99); 
+ 176   1              _nop_();
+C51 COMPILER V8.00   ADBM_A520                                                             08/13/2008 10:41:30 PAGE 4   
+
+ 177   1              _nop_(); 
+ 178   1      
+ 179   1              spi_write_sensor(0x74, 0x02); 
+ 180   1              _nop_();
+ 181   1              _nop_();
+ 182   1      
+ 183   1              // ##### LED Current #####
+ 184   1              spi_write_sensor(0x1A, 0x05); 
+ 185   1              _nop_();
+ 186   1              _nop_();
+ 187   1      
+ 188   1              // Read from registers 0x02, 0x03 and 0x04
+ 189   1              spi_temp = spi_read_sensor(0x02);
+ 190   1              _nop_();
+ 191   1              _nop_();
+ 192   1              spi_temp = spi_read_sensor(0x03);
+ 193   1              _nop_();
+ 194   1              _nop_();
+ 195   1              spi_temp = spi_read_sensor(0x04);
+ 196   1              _nop_();
+ 197   1              _nop_();
+ 198   1      
+ 199   1      }
+ 200          
+ 201          
+ 202          void Initiliaze_A520_I2C(void)
+ 203          {
+ 204   1              EIE1 &= ~0x02;
+ 205   1              Power_Up_Sequence_I2C();
+ 206   1              EIE1 |= 0x02;
+ 207   1      
+ 208   1              t_temp_data = 50;
+ 209   1              time_temp = 1;
+ 210   1              while(time_temp == 1);
+ 211   1      
+ 212   1              EIE1 &= ~0x02;
+ 213   1              while(i2c_status != I2C_FREE);
+ 214   1              i2c_buffer[0] = 0x80;
+ 215   1              i2c_ByteWrite(I2C_ADDR, ADBM_A520_CONFIGURATIONBITS_ADDR, i2c_buffer, 1); // Configuration register data 
+             -(Normal 800CPI)  
+*** ERROR C202 IN LINE 215 OF ADBM_A520.C: 'ADBM_A520_CONFIGURATIONBITS_ADDR': undefined identifier
+ 216   1              while(i2c_status != I2C_FREE);
+ 217   1              EIE1 |= 0x02;
+ 218   1      
+ 219   1      }
+ 220          
+ 221          void Power_Up_Sequence_I2C(void)
+ 222          {
+ 223   1              NCS = 0;                // NCS Low
+ 224   1              SHTDOWN = 0;    // Shutdown Low
+ 225   1              ORIENT = 0;             // Orient Low
+ 226   1              IO_SELECT = 0;  // select I2C Mode
+ 227   1      
+ 228   1              MOSI = 0;                       // device address A0
+ 229   1              NCS = 0;                        // device address A1
+ 230   1      
+ 231   1              NRESET = 0;             // NRESET Low
+ 232   1              i2c_delay();
+ 233   1              NRESET = 1;             // NRESET High
+ 234   1      
+ 235   1              ORIENT = 1;             // For OFN orientation
+ 236   1      
+C51 COMPILER V8.00   ADBM_A520                                                             08/13/2008 10:41:30 PAGE 5   
+
+ 237   1              EIP1      |= 0x01;
+ 238   1              i2c_Init();                     // enable i2c
+ 239   1      
+ 240   1              i2c_delay();
+ 241   1      
+ 242   1              while(i2c_status != I2C_FREE);
+ 243   1              i2c_ByteRead(I2C_ADDR, ADBM_A520_PRODUCTID_ADDR, i2c_buffer, 1);        
+*** ERROR C202 IN LINE 243 OF ADBM_A520.C: 'ADBM_A520_PRODUCTID_ADDR': undefined identifier
+ 244   1              while(i2c_status != I2C_FREE);
+ 245   1              i2c_delay();
+ 246   1      
+ 247   1      
+ 248   1              // Perform soft reset by writing 0x5A to address 0x3A
+ 249   1              while(i2c_status != I2C_FREE); 
+ 250   1              i2c_buffer[0] = 0x5A;
+ 251   1              i2c_ByteWrite(I2C_ADDR, ADBM_A520_SOFTRESET_ADDR, i2c_buffer, 1); // Configuration register data (Normal 
+             -800CPI)  
+*** ERROR C202 IN LINE 251 OF ADBM_A520.C: 'ADBM_A520_SOFTRESET_ADDR': undefined identifier
+ 252   1              while(i2c_status != I2C_FREE);
+ 253   1              i2c_delay();
+ 254   1      
+ 255   1      
+ 256   1              while(i2c_status != I2C_FREE); 
+ 257   1              i2c_buffer[0] = 0xE4;
+ 258   1              i2c_ByteWrite(I2C_ADDR, 0x60, i2c_buffer, 1); // Write 0xA0 to address 0x60 
+ 259   1              while(i2c_status != I2C_FREE);
+ 260   1              i2c_delay();
+ 261   1      
+ 262   1              // speed switching thresholds
+ 263   1              while(i2c_status != I2C_FREE); 
+ 264   1              i2c_buffer[0] = 0x1A;
+ 265   1              i2c_ByteWrite(I2C_ADDR, 0x62, i2c_buffer, 1); // Wakeup 500DPI
+ 266   1              while(i2c_status != I2C_FREE);
+ 267   1              i2c_delay();
+ 268   1      
+ 269   1              while(i2c_status != I2C_FREE); 
+ 270   1              i2c_buffer[0] = 0x0E;
+ 271   1              i2c_ByteWrite(I2C_ADDR, 0x63, i2c_buffer, 1); // 16ms, low DPI
+ 272   1              while(i2c_status != I2C_FREE);
+ 273   1              i2c_delay();
+ 274   1      
+ 275   1              while(i2c_status != I2C_FREE); 
+ 276   1              i2c_buffer[0] = 0x06;
+ 277   1              i2c_ByteWrite(I2C_ADDR, 0x64, i2c_buffer, 1); 
+ 278   1              while(i2c_status != I2C_FREE);
+ 279   1              i2c_delay();
+ 280   1       
+ 281   1              while(i2c_status != I2C_FREE); 
+ 282   1              i2c_buffer[0] = 0x03;
+ 283   1              i2c_ByteWrite(I2C_ADDR, 0x65, i2c_buffer, 1); 
+ 284   1              while(i2c_status != I2C_FREE);
+ 285   1              i2c_delay();           
+ 286   1      
+ 287   1              while(i2c_status != I2C_FREE); 
+ 288   1              i2c_buffer[0] = 0x08;
+ 289   1              i2c_ByteWrite(I2C_ADDR, 0x66, i2c_buffer, 1); 
+ 290   1              while(i2c_status != I2C_FREE);
+ 291   1              i2c_delay(); 
+ 292   1      
+ 293   1              while(i2c_status != I2C_FREE); 
+ 294   1              i2c_buffer[0] = 0x04;
+ 295   1              i2c_ByteWrite(I2C_ADDR, 0x67, i2c_buffer, 1); 
+C51 COMPILER V8.00   ADBM_A520                                                             08/13/2008 10:41:30 PAGE 6   
+
+ 296   1              while(i2c_status != I2C_FREE);
+ 297   1              i2c_delay(); 
+ 298   1      
+ 299   1              while(i2c_status != I2C_FREE); 
+ 300   1              i2c_buffer[0] = 0x10;
+ 301   1              i2c_ByteWrite(I2C_ADDR, 0x68, i2c_buffer, 1); 
+ 302   1              while(i2c_status != I2C_FREE);
+ 303   1              i2c_delay(); 
+ 304   1      
+ 305   1              while(i2c_status != I2C_FREE); 
+ 306   1              i2c_buffer[0] = 0x08;
+ 307   1              i2c_ByteWrite(I2C_ADDR, 0x69, i2c_buffer, 1);
+ 308   1              while(i2c_status != I2C_FREE);
+ 309   1              i2c_delay();
+ 310   1      
+ 311   1              // assert/ deassert thresholds
+ 312   1              while(i2c_status != I2C_FREE); 
+ 313   1              i2c_buffer[0] = 0xC4;
+ 314   1              i2c_ByteWrite(I2C_ADDR, 0x6D, i2c_buffer, 1); 
+ 315   1              while(i2c_status != I2C_FREE);
+ 316   1              i2c_delay();
+ 317   1      
+ 318   1              while(i2c_status != I2C_FREE); 
+ 319   1              i2c_buffer[0] = 0x44;
+ 320   1              i2c_ByteWrite(I2C_ADDR, 0x6E, i2c_buffer, 1); 
+ 321   1              while(i2c_status != I2C_FREE);
+ 322   1              i2c_delay(); 
+ 323   1      
+ 324   1              while(i2c_status != I2C_FREE); 
+ 325   1              i2c_buffer[0] = 0x51;
+ 326   1              i2c_ByteWrite(I2C_ADDR, 0x6F, i2c_buffer, 1); 
+ 327   1              while(i2c_status != I2C_FREE);
+ 328   1              i2c_delay();
+ 329   1       
+ 330   1              while(i2c_status != I2C_FREE); 
+ 331   1              i2c_buffer[0] = 0x38;
+ 332   1              i2c_ByteWrite(I2C_ADDR, 0x70, i2c_buffer, 1);   
+ 333   1              while(i2c_status != I2C_FREE);
+ 334   1              i2c_delay(); 
+ 335   1      
+ 336   1              while(i2c_status != I2C_FREE); 
+ 337   1              i2c_buffer[0] = 0x44;
+ 338   1              i2c_ByteWrite(I2C_ADDR, 0x71, i2c_buffer, 1);   
+ 339   1              while(i2c_status != I2C_FREE);
+ 340   1              i2c_delay();
+ 341   1      
+ 342   1              // FPD
+ 343   1              while(i2c_status != I2C_FREE); 
+ 344   1              i2c_buffer[0] = 0x50;
+ 345   1              i2c_ByteWrite(I2C_ADDR, 0x75, i2c_buffer, 1); 
+ 346   1              while(i2c_status != I2C_FREE);
+ 347   1              i2c_delay(); 
+ 348   1      
+ 349   1              while(i2c_status != I2C_FREE); 
+ 350   1              i2c_buffer[0] = 0x0F;
+ 351   1              i2c_ByteWrite(I2C_ADDR, 0x76, i2c_buffer, 1); 
+ 352   1              while(i2c_status != I2C_FREE);
+ 353   1              i2c_delay();
+ 354   1      
+ 355   1      
+ 356   1              // XYQ
+ 357   1              while(i2c_status != I2C_FREE); 
+C51 COMPILER V8.00   ADBM_A520                                                             08/13/2008 10:41:30 PAGE 7   
+
+ 358   1              i2c_buffer[0] = 0x99;
+ 359   1              i2c_ByteWrite(I2C_ADDR, 0x73, i2c_buffer, 1);  
+ 360   1              while(i2c_status != I2C_FREE);
+ 361   1              i2c_delay(); 
+ 362   1      
+ 363   1              while(i2c_status != I2C_FREE); 
+ 364   1              i2c_buffer[0] = 0x02;
+ 365   1              i2c_ByteWrite(I2C_ADDR, 0x74, i2c_buffer, 1); 
+ 366   1              while(i2c_status != I2C_FREE);
+ 367   1              i2c_delay();
+ 368   1      
+ 369   1              while(i2c_status != I2C_FREE); 
+ 370   1              i2c_buffer[0] = 0x05;
+ 371   1              i2c_ByteWrite(I2C_ADDR, 0x1A, i2c_buffer, 1); 
+ 372   1              while(i2c_status != I2C_FREE);
+ 373   1              i2c_delay();
+ 374   1      
+ 375   1      
+ 376   1              // Read from registers 0x02, 0x03 and 0x04
+ 377   1              while(i2c_status != I2C_FREE); 
+ 378   1              i2c_ByteRead(I2C_ADDR, ADBM_A520_MOTION_ADDR, i2c_buffer, 1);
+*** ERROR C202 IN LINE 378 OF ADBM_A520.C: 'ADBM_A520_MOTION_ADDR': undefined identifier
+ 379   1              while(i2c_status != I2C_FREE);
+ 380   1              i2c_delay();
+ 381   1      
+ 382   1              while(i2c_status != I2C_FREE); 
+ 383   1              i2c_ByteRead(I2C_ADDR, ADBM_A520_DELTAX_ADDR, i2c_buffer, 1);
+*** ERROR C202 IN LINE 383 OF ADBM_A520.C: 'ADBM_A520_DELTAX_ADDR': undefined identifier
+ 384   1              while(i2c_status != I2C_FREE);
+ 385   1              i2c_delay();
+ 386   1      
+ 387   1              while(i2c_status != I2C_FREE); 
+ 388   1              i2c_ByteRead(I2C_ADDR, ADBM_A520_DELTAY_ADDR, i2c_buffer, 1);
+*** ERROR C202 IN LINE 388 OF ADBM_A520.C: 'ADBM_A520_DELTAY_ADDR': undefined identifier
+ 389   1              while(i2c_status != I2C_FREE);
+ 390   1              i2c_delay();
+ 391   1      
+ 392   1      }
+ 393          
+ 394          void i2c_delay(void)
+ 395          {
+ 396   1              _nop_();_nop_();
+ 397   1      }
+ 398          
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  9 ERROR(S)
